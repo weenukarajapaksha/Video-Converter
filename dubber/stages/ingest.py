@@ -1,14 +1,13 @@
 """Task 1: validate the input video, extract metadata and the original audio."""
 
 from dubber import media
+from dubber.artifacts import METADATA, ORIGINAL_AUDIO
 from dubber.config import get_settings
 from dubber.pipeline.job import Job
 from dubber.pipeline.stage import ProgressFn, Stage
 from dubber.schemas import VideoMetadata
 
-METADATA = "metadata.json"
 # 44.1 kHz stereo is what Demucs is trained on; downstream stages resample as needed.
-ORIGINAL_AUDIO = "audio_original.wav"
 SEPARATION_SR = 44100
 
 

@@ -5,7 +5,7 @@ from dubber import media
 from dubber.errors import InputValidationError
 from dubber.pipeline import Job, Pipeline
 from dubber.stages import IngestStage
-from dubber.stages.ingest import ORIGINAL_AUDIO
+from dubber.artifacts import ORIGINAL_AUDIO
 from tests.conftest import make_video
 
 

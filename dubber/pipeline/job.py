@@ -20,8 +20,9 @@ from pydantic import BaseModel, Field
 
 M = TypeVar("M", bound=BaseModel)
 
+from dubber.artifacts import INPUT_VIDEO
+
 MANIFEST = "manifest.json"
-INPUT_VIDEO = "input.mp4"
 
 
 def _now() -> datetime:

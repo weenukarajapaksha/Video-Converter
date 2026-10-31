@@ -42,14 +42,16 @@ class Pipeline:
             self._offsets[s.name] = (acc / total, s.weight / total)
             acc += s.weight
 
-    def run(self, job: Job, force: Iterable[str] = ()) -> None:
-        """Run all stages. Completed stages are skipped unless named in ``force``.
+    def run(self, job: Job, force: Iterable[str] = (), stop_after: str | None = None) -> bool:
+        """Run stages in order. Completed stages are skipped unless named in ``force``.
 
         Once any stage actually executes, every downstream stage re-runs as well,
-        because its inputs may have changed.
+        because its inputs may have changed. With ``stop_after`` the run pauses after
+        that stage (e.g. for human review of the translation); returns True when the
+        whole pipeline has finished.
         """
         force = set(force)
-        unknown = force - set(self._offsets)
+        unknown = (force | ({stop_after} if stop_after else set())) - set(self._offsets)
         if unknown:
             raise ValueError(f"unknown stages: {sorted(unknown)}")
 
@@ -57,9 +59,12 @@ class Pipeline:
         for stage in self.stages:
             if not dirty and stage.name not in force and stage.is_complete(job):
                 self._emit(job, stage, "skipped", 1.0, "already complete")
-                continue
-            dirty = True
-            self._run_stage(job, stage)
+            else:
+                dirty = True
+                self._run_stage(job, stage)
+            if stage.name == stop_after and stage is not self.stages[-1]:
+                return False
+        return True
 
     def _run_stage(self, job: Job, stage: Stage) -> None:
         record = job.record(stage.name)

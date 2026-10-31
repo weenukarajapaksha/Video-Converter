@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class VideoMetadata(BaseModel):
@@ -28,3 +30,91 @@ class VideoMetadata(BaseModel):
     @property
     def resolution(self) -> str:
         return f"{self.width}x{self.height}"
+
+
+class Word(BaseModel):
+    start: float
+    end: float
+    text: str
+    probability: float | None = None
+
+
+class Segment(BaseModel):
+    """One utterance of the source dialogue (transcript.json)."""
+
+    id: int
+    start: float
+    end: float
+    speaker: str = "SPEAKER_00"
+    text: str
+    words: list[Word] = Field(default_factory=list)
+    confidence: float | None = None  # mean word probability
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+
+class Transcript(BaseModel):
+    language: str = "zh"
+    segments: list[Segment]
+    speech_ratio: float | None = None  # fraction of the timeline that contains speech
+
+    @property
+    def speakers(self) -> list[str]:
+        return sorted({s.speaker for s in self.segments})
+
+
+Gender = Literal["male", "female", "unknown"]
+
+
+class SpeakerProfile(BaseModel):
+    """Voice assignment for one diarized speaker (voices.json). Editable in the UI."""
+
+    speaker: str
+    gender: Gender = "unknown"
+    median_f0_hz: float | None = None
+    speaking_time_s: float = 0.0
+    voice: str  # provider-specific voice id, e.g. "Puck" or "en-US-GuyNeural"
+    style: str = ""  # free-text delivery hint for style-capable TTS
+
+
+class VoiceMap(BaseModel):
+    provider: str
+    speakers: dict[str, SpeakerProfile]
+
+
+class TranslatedSegment(BaseModel):
+    """One line of dubbed dialogue (translation.json). Editable before dubbing."""
+
+    id: int
+    start: float
+    end: float
+    speaker: str
+    source_text: str
+    text: str
+    emotion: str = "neutral"
+    # Time the line may occupy: its own slot plus any silence before the next line.
+    max_duration_s: float
+
+
+class Translation(BaseModel):
+    source_language: str = "Chinese"
+    target_language: str = "English"
+    model: str
+    segments: list[TranslatedSegment]
+
+
+class SynthesizedLine(BaseModel):
+    id: int
+    path: str  # relative to the job dir
+    start: float  # placement on the output timeline
+    raw_duration_s: float
+    final_duration_s: float
+    tempo: float = 1.0  # time-stretch factor applied (1.0 = none)
+    rewrites: int = 0  # how many times the line was shortened by the LLM
+    text: str
+
+
+class DubTrack(BaseModel):
+    lines: list[SynthesizedLine]
