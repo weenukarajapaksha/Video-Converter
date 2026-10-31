@@ -98,11 +98,30 @@ class TranslatedSegment(BaseModel):
     max_duration_s: float
 
 
+class TranslationIssue(BaseModel):
+    id: int
+    category: str  # accuracy | idiom | tone | fluency | consistency | length
+    comment: str
+    before: str
+    after: str
+
+
+class TranslationReview(BaseModel):
+    """Output of the critic pass (LLM-as-judge, 1-10 scales)."""
+
+    accuracy: int
+    naturalness: int
+    tone: int
+    summary: str
+    issues: list[TranslationIssue] = Field(default_factory=list)
+
+
 class Translation(BaseModel):
     source_language: str = "Chinese"
     target_language: str = "English"
     model: str
     segments: list[TranslatedSegment]
+    review: TranslationReview | None = None
 
 
 class SynthesizedLine(BaseModel):

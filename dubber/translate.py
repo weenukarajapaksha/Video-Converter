@@ -74,6 +74,46 @@ def translate_lines(segments: list[Segment], budgets: list[float], model: str,
     return result
 
 
+class IssueOut(BaseModel):
+    id: int
+    category: str = Field(description="accuracy | idiom | tone | fluency | consistency | length")
+    comment: str = Field(description="what is wrong, in one sentence")
+    revised_text: str = Field(description="the corrected line, within its max_words")
+
+
+class ReviewOut(BaseModel):
+    accuracy: int = Field(description="1-10: meaning preserved")
+    naturalness: int = Field(description="1-10: sounds like native spoken dialogue")
+    tone: int = Field(description="1-10: emotion and register preserved")
+    summary: str = Field(description="one or two sentences")
+    issues: list[IssueOut] = Field(description="only lines that genuinely need fixing")
+
+
+CRITIC_SYSTEM = """You are a strict dubbing QA reviewer checking a Chinese -> {lang} dub script.
+Compare every translated line with its source and the surrounding conversation. Flag only real problems:
+mistranslations or lost meaning, idioms translated literally, wrong emotion or register, unnatural or
+written-style phrasing, inconsistent names/terms, or lines over their max_words budget.
+For each flagged line give a corrected version that fixes the problem and stays within max_words.
+Do not flag lines that are already good; stylistic preferences are not issues.
+Score the script as a whole (after your fixes are NOT applied) on 1-10 scales."""
+
+
+def critique(segments: list[Segment], budgets: list[float], lines: dict[int, LineOut],
+             model: str, target_language: str, usage: llm.Usage) -> ReviewOut:
+    """LLM-as-judge pass: scores the draft and proposes fixes for flagged lines."""
+    body = "\n".join(
+        f"[{s.id}] {s.speaker} (max_words={word_budget(b)}, emotion={lines[s.id].emotion})\n"
+        f"    source: {s.text}\n    draft:  {lines[s.id].text}"
+        for s, b in zip(segments, budgets))
+    review = llm.generate(model, CRITIC_SYSTEM.format(lang=target_language),
+                          "Review this dub script:\n\n" + body, ReviewOut, usage, temperature=0.2)
+    budget_by_id = {s.id: word_budget(b) for s, b in zip(segments, budgets)}
+    # Keep only fixes for real lines that respect the word budget (small tolerance).
+    review.issues = [i for i in review.issues if i.id in lines and i.revised_text.strip()
+                     and len(i.revised_text.split()) <= budget_by_id[i.id] + 1]
+    return review
+
+
 def shorten_lines(items: list[tuple[Segment, str, float]], model: str, target_language: str,
                   usage: llm.Usage) -> dict[int, str]:
     """Rephrase over-long lines to fit their budgets (one request for all of them)."""

@@ -75,7 +75,11 @@ class GeminiTTS(TTSProvider):
     """Gemini native TTS: controllable delivery via natural-language instructions."""
 
     name = "gemini"
-    model = "gemini-2.5-flash-preview-tts"
+
+    def __init__(self):
+        from dubber.config import get_settings
+
+        self.model = get_settings().tts_model
 
     @staticmethod
     def prompt(text: str, emotion: str, style: str) -> str:

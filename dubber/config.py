@@ -25,8 +25,11 @@ class Settings(BaseSettings):
     max_duration_s: float = 180.0
 
     whisper_model: str = "large-v3"
-    translation_model: str = "gemini-2.5-flash"
-    tts_provider: Literal["gemini", "edge"] = "gemini"
+    translation_model: str = "gemini-3.8-flash"
+    tts_model: str = "gemini-3.8-flash-tts"
+    # Edge is free and unlimited; Gemini TTS is more expressive but its free tier
+    # allows very few requests per day.
+    tts_provider: Literal["gemini", "edge"] = "edge"
     target_language: str = "English"
 
 
