@@ -13,14 +13,10 @@ from rich.table import Table
 from dubber import media
 from dubber.config import get_settings
 from dubber.pipeline import Job, Pipeline, PipelineEvent
-from dubber.stages import IngestStage
+from dubber.stages import build_stages
 
 app = typer.Typer(add_completion=False, help="AI video dubbing: Chinese -> English")
 console = Console()
-
-
-def build_stages():
-    return [IngestStage()]
 
 
 @app.command()

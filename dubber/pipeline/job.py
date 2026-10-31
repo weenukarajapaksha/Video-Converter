@@ -94,6 +94,11 @@ class Job:
     def input_video(self) -> Path:
         return self.root / INPUT_VIDEO
 
+    def option(self, key: str, default=None):
+        """Per-job option (set at upload time) with a fallback default."""
+        value = self.manifest.options.get(key)
+        return default if value is None else value
+
     def path(self, name: str) -> Path:
         return self.root / name
 
