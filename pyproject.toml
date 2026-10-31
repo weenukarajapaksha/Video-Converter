@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dubber"
+version = "0.1.0"
+description = "AI video translation & dubbing pipeline (Chinese -> English)"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "typer>=0.12",
+    "rich>=13.7",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+# Heavy ML stack. Install torch/torchaudio from the CUDA index first (see README).
+ml = [
+    "faster-whisper>=1.1",
+    "pyannote.audio>=3.3,<4",
+    "demucs>=4.0.1",
+    "librosa>=0.10",
+]
+ai = [
+    "google-genai>=1.20",
+    "edge-tts>=7.0",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+]
+dev = [
+    "pytest>=8.2",
+    "httpx>=0.27",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+dubber = "dubber.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["dubber*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: requires CUDA and downloaded models",
+    "network: calls external APIs",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

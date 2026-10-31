@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# pipeline workspaces & model caches
+jobs/
+models/
+*.wav
+
+# frontend
+web/node_modules/
+web/dist/
