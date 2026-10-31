@@ -11,7 +11,7 @@ Contents:
 6. [Limitations and known issues](#6-limitations-and-known-issues)
 7. [Production improvements](#7-potential-production-improvements)
 
-Also: [Performance & accuracy optimizations](#performance--accuracy-optimizations-measured)
+Also: [Performance & accuracy optimizations](#performance--accuracy-optimizations-measured) · State-of-the-art comparison and upgrade path: [Dubbing pipeline technology review](../reports/Dubbing%20pipeline%20technology%20review.md)
 
 ---
 
@@ -24,15 +24,15 @@ Also: [Performance & accuracy optimizations](#performance--accuracy-optimization
 | 1 | `ingest` | `input.mp4` | `metadata.json`, `audio_original.wav` | ffprobe, FFmpeg | 1 |
 | 2 | `separate` | `audio_original.wav` | `vocals.wav`, `background.wav` | Demucs `htdemucs_ft` (GPU) | 1 |
 | 3 | `transcribe` | `vocals.wav` | `transcript_raw.json`, `asr_stats.json` | faster-whisper `large-v3` int8 + Silero VAD (GPU) | 1 |
-| 4 | `diarize` | `vocals.wav`, `transcript_raw.json` | `diarization.json`, `transcript.json` | pyannote `speaker-diarization-3.1` (GPU) | 1 |
-| 5 | `voices` | `transcript.json`, `vocals.wav` | `voices.json` | librosa pYIN pitch tracking | 1 |
+| 4 | `diarize` | `vocals.wav`, `transcript_raw.json` | `diarization.json`, `diarization_meta.json`, `transcript.json` | pyannote `speaker-diarization-3.1` + embedding/pitch speaker merge (GPU) | 1 |
+| 5 | `voices` | `transcript.json`, `vocals.wav` | `voices.json`, `voice_casting.json` | librosa pYIN pitch tracking, pitch-matched casting | 1 |
 | 6 | `translate` | `transcript.json`, `metadata.json` | `translation.json` | Gemini (draft + critic) | 4 |
 | 7 | `synthesize` | `translation.json`, `voices.json` | `tts/`, `dub_track.json`, `dub_voice.wav` | Edge TTS / Gemini TTS, Gemini (rewrites), Rubber Band | 3 |
 | 8 | `mix` | `background.wav`, `dub_voice.wav`, `vocals.wav` | `dub_mix.wav` | NumPy DSP, FFmpeg `loudnorm` | 1 |
 | 9 | `render` | `input.mp4`, `dub_mix.wav`, translation | `output.mp4`, SRTs, `report.json` | FFmpeg (H.264 copy, AAC, mov_text) | 1 |
 | 10 | `lipsync` (opt.) | `output.mp4`, `dub_voice.wav`, `dub_track.json` | `output_lipsync.mp4` | Wav2Lip-GAN (separate environment) | 1 |
 
-"Retries" is the stage's `max_attempts`. Only `TransientError` (HTTP 408/429/5xx, network failures) is retried, with exponential backoff (2 s, 4 s, 8 s). Validation and configuration errors fail immediately with an actionable message.
+"Retries" is the stage's `max_attempts`. Only `TransientError` (HTTP 408/5xx, per-minute 429, network failures) is retried, with exponential backoff (2 s, 4 s, 8 s). Validation and configuration errors fail immediately with an actionable message, and so does a Gemini **daily** quota 429 (`QuotaExhausted`), once every fallback model is exhausted.
 
 ### Checkpointing runner ([`dubber/pipeline/`](../dubber/pipeline))
 - **Job folder and manifest.** A job is a folder plus `manifest.json`, which records each stage's status, attempt count, start and finish times, duration and error, plus a cost ledger. Manifest writes are atomic: write a temp file, then `os.replace`.
@@ -47,21 +47,24 @@ Also: [Performance & accuracy optimizations](#performance--accuracy-optimization
 
 ### API and UI
 **FastAPI ([`dubber/api/app.py`](../dubber/api/app.py)):**
-- Upload with per-job options: target language, TTS provider, review pause, lip sync.
+- Upload with per-job options: target language, TTS provider, review pause, lip sync, number of speakers.
 - SSE event stream.
 - GET/PUT for transcript, translation and voices. Edits are validated, and translation edits can change wording and emotion but never timings.
 - `continue` and `retry` endpoints.
+- **Per-line re-voice**: `POST /lines/{id}/regenerate` re-synthesizes one line with the user's final wording (no LLM rewrite, stretch only), rebuilds the voice track, then re-runs only `mix` and `render`. Measured 8.1–8.4 s with Edge, about 3.5 s of which was the source-loudness measurement; that is now cached in `source_loudness.json`.
+- **Voice preview**: `GET /api/voices/{provider}/{voice}/preview`, cached on disk (1.3 s, then ~0.03 s). The voice catalog can be filtered by target language.
+- **Quality report**: `GET /quality` collects ASR confidence and recovered regions, speaker count, sync overflow and critic scores into warnings.
 - A whitelisted file server: artifact names only, which blocks path traversal.
 - A cost and time report.
-- A single-worker queue, because the GPU fits one job at a time.
+- A single-worker queue, because the GPU fits one job at a time. Jobs run from the CLI show their state in the UI too, because it is inferred from the manifest.
 
 **React UI ([`web/`](../web)):**
 - Upload page with a live preview.
 - The pipeline drawn as a signal chain with live progress.
 - A two-track timeline (Chinese source and English dub) showing each line's time budget, tempo, LLM rewrites and silence.
 - A/B monitor with karaoke subtitles.
-- Script editor with fit gauges, and speaker cast cards for remapping voices.
-- Critic QA card, cost report and downloads.
+- Script editor with fit gauges, low-ASR-confidence markers, `asr_fix` tags, one-click re-voice per line, and speaker cast cards with voice preview.
+- Critic QA card, quality panel, cost report and downloads.
 
 ---
 
@@ -72,10 +75,10 @@ Also: [Performance & accuracy optimizations](#performance--accuracy-optimization
 | Source separation | Demucs v4 `htdemucs_ft` (bag of 4 fine-tuned Hybrid Transformer Demucs) | local GPU |
 | Voice activity detection | Silero VAD (bundled with faster-whisper) | local |
 | ASR | Whisper `large-v3` via faster-whisper (CTranslate2, int8_float16) | local GPU |
-| Diarization | pyannote.audio 3.4, `speaker-diarization-3.1` (segmentation-3.0 + WeSpeaker ResNet34) | local GPU |
-| Gender / pitch | librosa pYIN F0 tracking | local CPU |
+| Diarization | pyannote.audio 3.4, `speaker-diarization-3.1` (segmentation-3.0 + WeSpeaker ResNet34), plus our own speaker merge using its embeddings and pitch | local GPU |
+| Gender / pitch / casting | librosa pYIN F0 tracking; voice chosen by closest pitch | local CPU |
 | Translation, critic, rewrites | Gemini `gemini-3.8-flash`, falling back to `gemini-3.5-flash`, then `gemini-flash-latest`; structured JSON output | API |
-| TTS | Microsoft Edge neural voices (`edge-tts`, default), or Gemini `gemini-3.8-flash-tts` (style-prompted emotion) | API |
+| TTS | Microsoft Edge neural voices (`edge-tts`, default; native voices for es/fr/de/ja/ko/si/hi targets), or Gemini `gemini-3.8-flash-tts` (multilingual, style-prompted emotion) | API |
 | Time-stretch | Rubber Band (FFmpeg `rubberband`, formant-preserving) | local |
 | Mixing / loudness | NumPy, FFmpeg `loudnorm` (EBU R128) | local |
 | Lip sync (bonus) | Wav2Lip-GAN | local GPU, isolated environment |
@@ -102,6 +105,16 @@ Separation does double duty. ASR runs on the clean vocal stem, and the backgroun
 ### Diarization: pyannote 3.1
 The best open diarization pipeline that runs locally, and the assessment's suggested tool. We pass the waveform to it in memory, which avoids pyannote's file-decoding dependencies.
 
+On real film audio it **over-splits** speakers, so we add a merge step ([`merge_speakers`](../dubber/stages/diarize.py)):
+- pyannote is called with `return_embeddings=True`.
+- Two clusters merge when their duration-weighted embedding centroids have cosine similarity ≥ 0.40 **and** their median pitch is within ~3.5 semitones (|ln f0a/f0b| ≤ 0.20). If a cluster has no reliable pitch, the similarity bar rises to 0.50.
+- Clusters with under 1.5 s of speech are absorbed by the most similar cluster of the same gender.
+- Every merge is logged to `diarization_meta.json`.
+- `num_speakers` skips the merge; `min_speakers` / `max_speakers` are passed through to pyannote.
+- Measured: the real clip went from **5 to 3 speakers**; the synthetic two-speaker clip stays at **2**.
+
+The October 2026 review recommends **pyannote community-1** next. It improves DER on almost every benchmark (AliMeeting 24.5 → 20.3).
+
 ### Translation: Gemini
 - The user's available key was Gemini.
 - Native structured output (`response_schema`) gives typed JSON per line, so lines can't be merged or dropped.
@@ -111,8 +124,10 @@ The best open diarization pipeline that runs locally, and the assessment's sugge
 ### TTS: Edge (default) and Gemini TTS (optional)
 - **ElevenLabs** and **OpenAI TTS** are paid, and no keys were available.
 - **Gemini TTS** is emotion-steerable through natural-language style prompts, but its free tier allows only a handful of requests per day. A 60-line video wouldn't fit.
-- **Edge neural voices** are free, unlimited and fast, with good male and female US voices.
+- **Edge neural voices** are free, unlimited and fast, with good male and female US voices. Non-English targets get native locale voices (verified against Edge's live voice list).
 - Both sit behind one `TTSProvider` interface with content-hash caching, so switching is one option.
+- **Casting by pitch:** the median F0 of all 10 English Edge voices was measured (100–197 Hz), and each speaker gets the unused same-gender voice nearest in log-pitch. Example on the real clip: 112 Hz → Brian (117 Hz), 138 Hz → Guy (143 Hz), 208 Hz → Ava (197 Hz). Gemini voice pitches are gender-typical estimates, because measuring them would spend free-tier quota.
+- The review found **Gemini 3.8 Flash TTS ranked #2 on the Artificial Analysis speech arena** (about $0.0135/min). It is the right premium option once billing is enabled.
 
 ### Orchestration: a custom runner, not LangGraph
 LangGraph was considered and deliberately not used:
@@ -143,6 +158,10 @@ Every item below was hit on real runs. Each lists the root cause, the fix, and t
 | 11 | An ASR test took **1 hour** | Another process was using the 4 GB GPU at the same time, and VRAM spilled into shared system memory | **Cross-process GPU lock** in `ml.gpu_scope()` |
 | 12 | Timeline, QA and report panels sometimes didn't render | Browser connection starvation: the SSE stream, video range requests and 7 per-file size probes exceeded 6 connections per host | File sizes now come with the job summary, so there are no per-file requests |
 | 13 | Gemini client "closed" mid-request | A temporary `genai.Client` was garbage-collected | One cached client per process |
+| 14 | 5 speakers detected for about 3 people, so one actor switched voices mid-scene | pyannote over-splits short film turns. Embedding similarity **alone** can't fix it: a real man/woman pair scored cosine 0.44, the same as over-split pairs of one person (0.41–0.44) | Merge only when the embeddings are similar **and** the pitch is within ~3.5 semitones (the man/woman pair differed by ~8). Real clip 5 → 3; synthetic clip stays at 2. |
+| 15 | "没有测绘" became **"Blank."**, "别" became "Don't." | Sub-second lines got 0.4–0.6 s budgets, about one English word | `merge_short_lines` joins lines under 1 s (or ≤2 characters) with an adjacent line of the **same** speaker (gap ≤0.35 s). Every line also gets a minimum budget of min(0.8 s, gap). Result: *"Without architectural surveying, it's a total blank."* |
+| 16 | ASR homophones (丹代 for 唐代 "Tang dynasty", 扛够 for 唐构) | Whisper's language model, weak on rare Chinese terms | The translator sees low-confidence words (`[uncertain: 丹代(0.41)]`), repairs them from context, and records each repair in `asr_fix`. Fixed 丹代→唐代 (twice) and 扛够→唐构. Missed 冰火→兵火, because Whisper was 0.94 confident about it. |
+| 17 | Every Gemini model returned 429 mid-evaluation, and stages kept retrying | The free tier allows about 20 requests per model per day, and a daily 429 looked like a transient error | Daily-quota 429s are classified as `QuotaExhausted`: skip to the next model, never retry the same one, and if every fallback is exhausted, fail with "enable billing / use a -lite model / wait for reset". Per-minute 429s are still retried. |
 
 ---
 
@@ -152,6 +171,8 @@ Every item below was hit on real runs. Each lists the root cause, the fix, and t
 - A line may use its own slot plus the silence before the next line, keeping a 0.15 s pause.
 - It may run at most 1.5 s past where the original speaker stopped.
 - Overlapping source lines keep their own duration.
+- Every line gets at least min(0.8 s, time to the next line), giving up the 0.15 s pause if necessary.
+- Before budgeting, sub-second lines are merged with an adjacent line of the same speaker ([`align.merge_short_lines`](../dubber/align.py)). Different-speaker neighbours are never merged, because that is real turn-taking.
 - Budgets become word budgets at 2.6 words per second, roughly natural conversational English at 150–170 words per minute.
 
 ### Draft, critique, revise ([`dubber/translate.py`](../dubber/translate.py))
@@ -159,7 +180,8 @@ Every item below was hit on real runs. Each lists the root cause, the fix, and t
    - The whole conversation is sent at once, in chunks of 60 lines with 8 lines of context on each side for long videos.
    - Each line comes with its speaker, timecode, seconds available and `max_words`.
    - The system prompt is written as a dubbing-script adapter: keep meaning, subtext and register; adapt idioms rather than translating them literally; resolve pronouns from context; use contractions; no stage directions; one output line per input id.
-   - The output is schema-validated JSON (`id`, `text`, `emotion`). Ids the model skips are requested again.
+   - The output is schema-validated JSON (`id`, `text`, `emotion`, `asr_fix`). Ids the model skips are requested again.
+   - **ASR-aware:** words Whisper was less than 60% confident about are listed per line, least confident first (`[uncertain: 丹代(0.41)]`). The prompt explains the source is ASR output that may contain homophone errors. The model corrects them from context and reports each correction (`丹代→唐代`), which is stored in `translation.json` and shown in the editor.
 2. **Critique (LLM-as-judge).**
    - A second pass scores accuracy, naturalness and tone from 1 to 10.
    - It flags only real problems, in six categories: accuracy, idiom, tone, fluency, consistency and length.
@@ -191,23 +213,35 @@ Every item below was hit on real runs. Each lists the root cause, the fix, and t
 
 ## 6. Limitations and known issues
 
-- **Diarization over-splits speakers on real footage.** A 50 s film clip with about 3 speakers produced 5 clusters, and short turns are hard to embed. Each cluster gets a distinct voice; the UI's cast panel lets a user merge them by assigning the same voice. `num_speakers` can be passed as a job option.
-- **Very short source lines get tiny budgets.** A 0.4 s slot allows one word, so translations can be terse ("没有测绘" became "Unmapped"). Merging adjacent short lines from the same speaker before translation would help.
-- **ASR homophone errors** remain, e.g. 丹代 for 唐代 and 冰火 for 兵火. The context-aware translator usually recovers the meaning ("Tang timber buildings"), but the Chinese transcript shows the error.
+- **Speaker attribution on film audio is still imperfect.** The merge step reduced 5 detected speakers to 3 on the real clip, but even the best published systems reach about 37–45% DER on movie audio. `num_speakers` at upload, or recasting in the UI, is the manual fallback.
+- **Homophones the ASR is *confident* about are not caught.** `asr_fix` repaired 丹代→唐代 and 扛够→唐构, but missed 冰火→兵火 (confidence 0.94), which became "fire and ice". The Chinese transcript itself keeps the ASR text; repairs live only in the translation.
+- **Budgets assume English pace.** The 2.6 words/second budget is used for every target language. Syllable-based budgets would suit Japanese, Korean and the others better.
 - **Edge TTS has no emotion control.** Emotion tags affect only Gemini TTS, whose free tier is too small for full videos.
+- **Gemini free tier:** about 20 requests per model per day. A few full runs exhaust it, and a weaker `-lite` fallback can over-shorten lines in rewrites (seen: "Still right." for "But they're not necessarily wrong."). Billing removes both issues for about $0.01 per minute of video.
 - **Overlapping speech** is mixed as overlapping dub lines, not separated per speaker.
 - **Mouth movements** won't match the English unless lip sync is on.
 - **Lip sync (Bonus A)** is implemented as an out-of-process Wav2Lip-GAN stage (`stages/lipsync.py`, `wav2lip_runner.py`, `scripts/setup_lipsync.ps1`):
   - Only frames inside dubbed segments are processed.
   - It needs the separate `.venv-lipsync` environment, and fails with setup instructions if that's missing.
   - Wav2Lip outputs 96×96 mouth crops, so faces look softer than the source.
-  - It is off by default and adds significant runtime.
+  - It is off by default and adds significant runtime (measured about 2.2 s per video-second, 1.9 GB VRAM, on a 22 s talking-head sample).
+  - It animates the largest face, not necessarily the active speaker.
+  - The Wav2Lip weights are licensed for non-commercial use only.
+  - The run on the real film clip still has to be started by the user (README → Lip sync), because executing the third-party code requires their approval.
 - **Third-party pricing.** API prices are list prices from third-party sources, October 2026. See the cost analysis.
 - **Input limits:** inputs are limited to MP4 files of 30–180 s by design; both are configurable.
 
 ---
 
 ## 7. Potential production improvements
+
+The [technology review](../reports/Dubbing%20pipeline%20technology%20review.md) (October 2026, with sources) compares each stage with the current state of the art. Its highest-value upgrades that fit in 4 GB:
+1. **Qwen3-ASR + Qwen3-ForcedAligner**, keeping faster-whisper as a fallback. Vendor-reported WenetSpeech CER: 9.86/19.11% → 4.97/5.88% (net/meeting). Word-timing error: 133 → 43 ms.
+2. **Mel-Band RoFormer separation** via `audio-separator`, about +2.5 dB vocal SDR on MVSEP Multisong. Demucs has been archived since January 2025.
+3. **pyannote community-1** diarization.
+4. **Syllable budgets with several length variants**, chosen by measured duration, plus an MQM-style critic from a different model family.
+
+None of these has been measured on 4 GB yet; each needs a smoke test before switching.
 
 | Area | Improvement |
 |---|---|
@@ -257,3 +291,10 @@ Every item below was hit on real runs. Each lists the root cause, the fix, and t
 | Parallel TTS + content-hash cache | Edits re-voice only changed lines | — | — |
 | H.264 stream copy | Render ≈ 1 s | Bit-exact visuals | 0 ms duration drift |
 | GPU file lock | Avoids ~100× slowdown | — | 1 h run without the lock |
+| Embedding + pitch speaker merge | ~0 | 5 → 3 speakers on the real clip; synthetic stays at 2 | `diarization_meta.json`, unit tests with measured values |
+| Pitch-matched casting | ~0 | Deep voices get deep voices (112 Hz → 117 Hz voice) | `voice_casting.json` |
+| Short-line merge + minimum budget | ~0 | "Blank." → full sentence | real clip |
+| ASR-aware translation (`asr_fix`) | ~0 (same request) | 3 homophone repairs on the real clip | real clip |
+| Daily-quota classification | Avoids minutes of futile retries | — | unit test |
+| Cached source loudness | ~3.5 s off each re-voice | — | profiled re-voice (8.1–8.4 s before) |
+| Per-line re-voice (no full re-run) | One line in ~8 s instead of a ~2 min job | User wording is final | API test + manual run |

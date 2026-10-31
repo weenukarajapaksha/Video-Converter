@@ -23,6 +23,12 @@ Switching TTS to **Gemini TTS** (emotion-steerable) adds about **$0.01 per minut
 | GPU-bound stages on that clip (separate + transcribe + diarize) | 44.3 + 24.7 + 13.4 = 82 s, about 1.6× realtime, including model loads |
 | API-bound stages (translate + synthesize) | 40.8 + 23.3 = 64 s |
 
+| Same clip after the A1–A4 accuracy changes, translation on `gemini-3.5-flash-lite` (main models' free quota exhausted) | 123 s, $0.0066 |
+| Re-voicing one edited line (Edge TTS + mix + render) | 8.1–8.4 s, $0; faster now that source loudness is cached |
+| Voice preview | 1.3 s first time, ~0.03 s cached, $0 with Edge |
+
+**Free tier vs billing:** the Gemini free tier allows about 20 requests per model per day, which is only a few full jobs. The numbers in this document are paid-tier list prices. At roughly $0.01–0.02 per minute of video, enabling billing is the practical choice even for development.
+
 ## Assumptions
 
 1. **API prices** come from `dubber/pricing.py`, where the higher of the third-party October 2026 listings is used:

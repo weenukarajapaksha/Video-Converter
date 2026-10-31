@@ -20,8 +20,9 @@ The fix is layered, and starts before any audio exists.
 
 **Here:**
 - pyannote 3.1 labels who speaks when. Each ASR *word* is assigned to the turn it overlaps most. One-word "blips" are smoothed away, speaker changes snap to nearby punctuation, and lines are re-cut per speaker.
-- Each speaker's gender is estimated from median pitch (pYIN; below 160 Hz is male), and each speaker gets a distinct voice. The mapping lives in `voices.json` and stays fixed for the whole video.
-- The UI lets a user re-cast or merge speakers.
+- **Over-split speakers are merged.** pyannote returns a speaker embedding per cluster. Two clusters merge when their embeddings are similar (cosine ≥ 0.40) **and** their pitch is close (within ~3.5 semitones). Embeddings alone weren't enough: a real man/woman pair scored 0.44, the same as two halves of one speaker, but their pitch differed by ~8 semitones. Tiny clusters (<1.5 s) join the most similar same-gender speaker. Real clip: 5 → 3 speakers; synthetic two-person clip stays at 2. Every decision is logged in `diarization_meta.json`.
+- Each speaker's gender is estimated from median pitch (pYIN; below 160 Hz is male). Each speaker then gets the unused same-gender voice **closest in pitch** (Edge voice pitches were measured), so a 112 Hz speaker gets a 117 Hz voice. The mapping lives in `voices.json` and stays fixed for the whole video.
+- The user can fix the count at upload (`num_speakers`) or re-cast in the UI, previewing each voice before choosing.
 
 **Across scenes or episodes in production:**
 - Store pyannote speaker *embeddings* per character, match new clusters by cosine similarity, and keep a persistent registry from character to voice.
@@ -79,11 +80,14 @@ The pipeline combines all three. Word-level timestamps let diarization turns be 
 ### 7. How would you evaluate translation quality, automatically and manually?
 
 **Automatic, implemented here:**
-- An LLM-as-judge critic pass scores **accuracy, naturalness and tone** from 1 to 10 and lists categorized issues with before/after fixes, stored per job.
-- **Constraint metrics** are also recorded: lines over budget, rewrite counts, and stretch factors.
+- An LLM-as-judge critic pass scores **accuracy, naturalness and tone** from 1 to 10 and lists categorized issues with before/after fixes, stored per job. A fix is accepted only if it still fits the line's time budget. Real clip: 8/8/8 with revisions; synthetic clip: 10/10/10, with nothing to change.
+- **ASR-error tracking:** the translator reports each homophone it repaired from context (`asr_fix`: 丹代→唐代, 扛够→唐构), so translation quality can be read separately from ASR quality.
+- **Constraint metrics** are also recorded: lines over budget, rewrite counts, and stretch factors. The quality panel (`/quality`) turns them into warnings.
+- **Against ground truth:** `scripts/evaluate.py` measures ASR CER and sync on synthetic scenarios with known scripts.
 
 **Automatic, for production:**
-- COMET/xCOMET or reference-free COMET-Kiwi.
+- A reference-free metric that can be cited: MetricX-24 (QE mode) or COMET-Kiwi. Never use the same metric both to pick candidates and to report results.
+- An MQM-style critic (error spans with category and severity) from a *different* model family than the translator.
 - Back-translation similarity.
 - Terminology consistency checks against a glossary.
 - Speech-level checks: ASR the English dub and compare it to the script, to catch TTS mispronunciations.
