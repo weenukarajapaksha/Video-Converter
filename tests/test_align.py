@@ -62,6 +62,55 @@ def test_stray_fragment_is_merged_into_following_line_of_same_speaker():
     assert [(ln.start, ln.text) for ln in lines] == [(7.0, "日本学者断言。")]
 
 
+def test_micro_lines_merge_into_same_speaker_neighbour_but_not_across_speakers():
+    # Real lines from the film clip (jobs/debug-run/transcript.json): "没有测绘" (0.44 s)
+    # was dubbed "Blank." and "别" (0.58 s) "Don't." because their slots were tiny.
+    from dubber.align import merge_short_lines
+
+    lines = [
+        Segment(id=0, start=34.64, end=35.08, speaker="S4", text="没有测绘"),
+        Segment(id=1, start=35.08, end=37.32, speaker="S4", text="建筑学完全是一片空白"),
+        Segment(id=2, start=37.32, end=37.90, speaker="S4", text="别"),
+        Segment(id=3, start=37.90, end=40.12, speaker="S5", text="找了几千年了"),
+    ]
+    merged = merge_short_lines(lines)
+    assert [(s.speaker, s.start, s.end, s.text) for s in merged] == [
+        ("S4", 34.64, 37.90, "没有测绘建筑学完全是一片空白别"),
+        ("S5", 37.90, 40.12, "找了几千年了"),  # different speaker: real turn, kept
+    ]
+    assert [s.id for s in merged] == [0, 1]
+
+
+def test_unpunctuated_fragment_joins_the_sentence_it_starts():
+    # Real case: "日本人的话" sits between two lines with 0 s gaps; it begins
+    # "日本人的话虽然难听", so it must join the next line, not the previous one.
+    from dubber.align import merge_short_lines
+
+    lines = [Segment(id=0, start=43.78, end=45.72, speaker="S5", text="唐构建筑早就没了"),
+             Segment(id=1, start=45.72, end=46.70, speaker="S5", text="日本人的话"),
+             Segment(id=2, start=46.70, end=47.98, speaker="S5", text="虽然难听")]
+    assert [s.text for s in merge_short_lines(lines)] == ["唐构建筑早就没了", "日本人的话虽然难听"]
+
+
+def test_short_line_isolated_by_a_long_pause_is_kept():
+    from dubber.align import merge_short_lines
+
+    lines = [Segment(id=0, start=0.0, end=0.5, speaker="A", text="好。"),
+             Segment(id=1, start=2.0, end=4.0, speaker="A", text="我们走吧。")]
+    assert [s.text for s in merge_short_lines(lines)] == ["好。", "我们走吧。"]
+
+
+def test_short_line_gets_a_minimum_budget_from_the_gap_before_the_next_line():
+    # 0.4 s line, next line 0.6 s later: the 0.15 s breathing pause would leave 0.45 s;
+    # the floor gives it 0.8 s (still ends before the next line starts).
+    segs = [Segment(id=0, start=10.0, end=10.4, text="a"),
+            Segment(id=1, start=10.9, end=12.0, text="b")]
+    assert time_budgets(segs, total_duration=20)[0] == pytest.approx(0.8)
+    # ...but never runs into the next line when the gap is smaller than the floor.
+    segs[1] = segs[1].model_copy(update={"start": 10.6})
+    assert time_budgets(segs, total_duration=20)[0] == pytest.approx(0.6)
+
+
 def test_uncovered_speech_finds_regions_asr_skipped():
     from dubber.align import uncovered_speech
 

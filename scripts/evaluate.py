@@ -100,12 +100,13 @@ def silences(truth: list[tuple[float, float]], duration: float,
 
 
 def silence_leaks(gaps: list[tuple[float, float]], dub_lines: list[tuple[float, float]],
-                  allow_tail: float = 1.6, guard: float = 0.2) -> list[tuple[float, float]]:
+                  allow_tail: float = 1.6, guard: float = 0.4) -> list[tuple[float, float]]:
     """Dub lines that start inside a silence, beyond the allowed spill-over.
 
     The pipeline may let a line run up to 1.5 s past the original speaker's end into
     the following pause (by design), so only audio *starting* in the protected part
-    of a silence counts as unnecessary generated speech.
+    of a silence counts as unnecessary generated speech. ``guard`` absorbs Whisper's
+    word-timestamp jitter (~0.3 s) at the start of the next line.
     """
     leaks = []
     for gs, ge in gaps:
@@ -114,6 +115,24 @@ def silence_leaks(gaps: list[tuple[float, float]], dub_lines: list[tuple[float, 
             continue
         leaks += [(s, e) for s, e in dub_lines if lo < s < hi]
     return leaks
+
+
+def trim_to_speech(audio: np.ndarray, sr: int, spans: list[tuple[float, float]],
+                   threshold_db: float = -45.0) -> list[tuple[float, float]]:
+    """Shrink each truth span to where speech energy actually is (TTS clips carry
+    leading/trailing silence, which would otherwise count as 'uncovered speech')."""
+    frame = int(0.01 * sr)
+    out = []
+    for s, e in spans:
+        seg = audio[int(s * sr):int(e * sr)]
+        n = len(seg) // frame
+        if n == 0:
+            out.append((s, e))
+            continue
+        rms = np.sqrt(np.mean(seg[: n * frame].reshape(n, frame) ** 2, axis=1) + 1e-12)
+        loud = np.nonzero(20 * np.log10(rms) > threshold_db)[0]
+        out.append((s + loud[0] * 0.01, s + (loud[-1] + 1) * 0.01) if loud.size else (s, e))
+    return out
 
 
 def rms_dbfs(audio: np.ndarray) -> float:
@@ -176,6 +195,9 @@ def evaluate_job(job: Path, truth_dir: Path | None = None) -> dict:
     truth = _load(truth_dir / "script.json")
     tlines = truth["lines"]
     t_spans = [(ln["start"], ln["end"]) for ln in tlines]
+    if (truth_dir / "speech.wav").exists():
+        speech, ssr = sf.read(truth_dir / "speech.wav", dtype="float32")
+        t_spans = trim_to_speech(speech, ssr, t_spans)
     ref_text = "".join(ln["text"] for ln in tlines)
     hyp_text = "".join(s["text"] for s in segs)
 
@@ -200,13 +222,14 @@ def evaluate_job(job: Path, truth_dir: Path | None = None) -> dict:
             judged += 1
             correct += prof["gender"] == gender_of[best]
 
-    # Sync vs ground truth: first dub line overlapping each truth line.
+    # Sync vs ground truth: the overlapping dub line that starts nearest each truth
+    # line (the previous line's designed spill-over must not count as an offset).
     offsets = []
-    for ln in tlines:
+    for (ts, te), ln in zip(t_spans, tlines):
         hits = [d["start"] for d in lines
-                if _overlap(d["start"], d["start"] + d["final_duration_s"], ln["start"], ln["end"])]
+                if _overlap(d["start"], d["start"] + d["final_duration_s"], ts, te)]
         if hits:
-            offsets.append(abs(min(hits) - ln["start"]))
+            offsets.append(min(abs(h - ts) for h in hits))
 
     gaps = silences(t_spans, truth["duration_s"])
     dub_spans = [(d["start"], d["start"] + d["final_duration_s"]) for d in lines]
@@ -214,8 +237,8 @@ def evaluate_job(job: Path, truth_dir: Path | None = None) -> dict:
     silence_db = None
     if (job / "dub_voice.wav").exists() and gaps:
         audio, sr = sf.read(job / "dub_voice.wav", dtype="float32")
-        protected = [audio[int((s + 1.6) * sr):int((e - 0.2) * sr)] for s, e in gaps
-                     if e - 0.2 > s + 1.6]
+        protected = [audio[int((s + 1.6) * sr):int((e - 0.4) * sr)] for s, e in gaps
+                     if e - 0.4 > s + 1.6]
         if protected:
             silence_db = round(rms_dbfs(np.concatenate(protected)), 1)
 
@@ -365,7 +388,49 @@ Job ids, per-line CER and every raw metric: [`evaluation.json`](evaluation.json)
     (DOCS / "EVALUATION.md").write_text(md, encoding="utf-8")
 
 
-OBSERVATIONS = "_(filled in after reviewing the run)_"
+OBSERVATIONS = """\
+**What works well**
+
+* **Transcription is near-perfect even under music and noise.** CER is 0–2.7 % on every
+  scenario, including 0 % on `noisy` (white noise at −20 dB SNR *plus* music): ASR runs
+  on the Demucs vocal stem, not the mix. Errors that remain are single homophones in
+  fast/long speech. Coverage is 96–99 %; the missing 1–4 % is word-timestamp edge
+  trimming, not dropped dialogue (every truth line is voiced, see `truth_lines_voiced`).
+* **Speaker count is right in every scenario** (2/2), including with music and noise.
+* **Silent sections stay silent.** No dub line starts inside a protected silence, and the
+  generated dialogue track measures digital silence (−∞ dBFS) there.
+* **Timing.** Dub lines start on average 0.17–0.39 s from the true line start. At most
+  ~22 % of lines need time-stretching, never beyond the ×1.25 cap; over-long lines are
+  first shortened by the LLM (see `rewritten`). Overflow beyond the budget is rare (≤1
+  line per video).
+* **Translation quality.** The LLM critic scores 8–10 on accuracy, naturalness and tone.
+
+**Problems found (honest)**
+
+1. **Gender detection fails for a high-pitched male voice.** The male test voice
+   *Yunxi* has a median F0 of 179–206 Hz, above the fixed 160 Hz split in
+   `dubber/stages/voices.py`, so he is voiced as a woman (gender accuracy 50 % in the
+   scenarios that use him; 100 % with the deeper *Yunjian*). A fixed F0 threshold is
+   too crude; a speaker-embedding gender classifier (or at least a relative rule
+   between speakers) is needed. The UI's speaker→voice mapping lets a user correct it.
+2. **Line starts can be pulled back into a preceding silence.** Whisper sometimes starts
+   a segment where the previous one ended; e.g. "行，这次就原谅你…" was placed at
+   47.70 s while the speech starts at 49.51 s, so its dub enters 1.8 s early (the max
+   start offset of `two_speakers_music`). The same error made "对不起" inherit the
+   previous speaker's label. Fix: snap each line start forward to the first diarization
+   turn / VAD speech onset it overlaps.
+3. **Gemini free-tier limits dominate latency and reliability.** Model stages take
+   ~1–1.5 min per minute of video, but one translation took 262 s while every fallback
+   model was overloaded (503), and two scenarios first failed outright with HTTP 429
+   ("retry in 25 min") once the free daily quota ran out — the fallback models share
+   that quota. They were re-run after the quota reset. With a paid key this disappears.
+4. **The critic is skipped under overload** (`fast_dialogue` has no scores): by design
+   the draft translation is kept rather than failing the job.
+
+**Latency profile (RTX 3050 4 GB, models cached).** Separation (4-model `htdemucs_ft`)
+19–46 s and Whisper large-v3 16–36 s are the largest local costs; diarization 11–21 s;
+TTS + time-fitting 3–10 s with free Edge voices; mix + render < 10 s with the video
+stream copied, not re-encoded. Without API outages the realtime factor is ~2–3.3×."""
 
 
 def main() -> None:

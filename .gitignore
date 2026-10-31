@@ -16,6 +16,9 @@ models/
 third_party/
 .venv-lipsync/
 
+# research working notes (the final report lives in reports/)
+research_notes/
+
 # generated test scenarios (rebuild with scripts/make_scenarios.py)
 samples/scenarios/*.mp4
 

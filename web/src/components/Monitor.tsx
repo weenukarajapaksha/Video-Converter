@@ -55,7 +55,9 @@ export default function Monitor({ job, transcript, translation, dub }: {
   const hasDub = job.artifacts.includes(dubbedName);
   const [source, setSource] = useState<"dub" | "orig">(hasDub ? "dub" : "orig");
   const [mode, setMode] = useState<"monitor" | "split">("monitor");
-  const src = api.fileUrl(job.job_id, source === "dub" && hasDub ? dubbedName : "input.mp4");
+  const src = source === "dub" && hasDub
+    ? api.fileUrl(job.job_id, dubbedName, false, api.renderVersion(job))
+    : api.fileUrl(job.job_id, "input.mp4");
   const resume = useRef<{ t: number; playing: boolean } | null>(null);
   const t = useVideoClock(video, src);
 
@@ -190,7 +192,9 @@ function SideBySide({ job, dubbedName }: { job: JobSummary; dubbedName: string }
         {[{ ref: left, name: "input.mp4", label: "A · Original 原声", color: "var(--zh)" },
           { ref: right, name: dubbedName, label: "B · English dub", color: "var(--en)" }].map((v) => (
           <figure key={v.name} className="space-y-2">
-            <video ref={v.ref} src={api.fileUrl(job.job_id, v.name)} controls playsInline preload="metadata"
+            <video ref={v.ref} preload="metadata" controls playsInline
+              src={api.fileUrl(job.job_id, v.name, false,
+                v.name === "input.mp4" ? null : api.renderVersion(job))}
               onEnded={() => setPlaying(false)} className="aspect-video w-full rounded-xl bg-black" />
             <figcaption className="flex items-center gap-2 font-mono text-xs" style={{ color: v.color }}>
               <span className="size-1.5 rounded-full" style={{ background: v.color }} />{v.label}

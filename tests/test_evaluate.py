@@ -44,6 +44,14 @@ def test_silence_leaks_allow_designed_spill_over_but_flag_lines_in_the_gap():
     assert ev.silence_leaks(gaps, ok + leak) == leak
 
 
+def test_trim_to_speech_drops_tts_padding():
+    sr = 1000
+    audio = np.zeros(5 * sr, np.float32)
+    audio[1500:3000] = 0.3  # speech from 1.5 s to 3.0 s inside a 1.0-4.0 s "line"
+    (s, e), = ev.trim_to_speech(audio, sr, [(1.0, 4.0)])
+    assert s == pytest.approx(1.5, abs=0.011) and e == pytest.approx(3.0, abs=0.011)
+
+
 def test_rms_dbfs():
     assert ev.rms_dbfs(np.zeros(100)) == float("-inf")
     assert ev.rms_dbfs(np.full(100, 0.5)) == pytest.approx(-6.02, abs=0.01)

@@ -88,6 +88,8 @@ export default function JobPage({ jobId }: { jobId: string }) {
   const hasTranslation = job.artifacts.includes("translation.json");
   const hasOutput = job.artifacts.includes("output.mp4");
   const showEditor = job.state === "awaiting_review" || (editing && hasTranslation && !running);
+  // Single lines can be re-voiced in place once a full dub exists.
+  const canRevoice = job.state === "done" && hasOutput && job.artifacts.includes("dub_track.json");
   const showQA = Boolean(translation?.review && hasOutput);
   const m = job.metadata;
   const opts = job.options as Record<string, string | boolean | undefined>;
@@ -172,16 +174,8 @@ export default function JobPage({ jobId }: { jobId: string }) {
         </div>
       )}
 
-      {showEditor && (
-        <div className="space-y-6">
-          {translation?.review && <QACard translation={translation} />}
-          <ScriptEditor jobId={jobId} onGenerated={() => {
-            setEditing(false); setStreamKey((k) => k + 1); void refresh();
-          }} />
-        </div>
-      )}
-
-      {!showEditor && hasOutput && (
+      {/* While editing a finished dub the monitor stays up, so re-voiced lines can be heard. */}
+      {hasOutput && (!showEditor || canRevoice) && (
         <>
           <div className="flex items-center gap-2 text-sm">
             <CheckCircle2 className="size-4 text-ok" />
@@ -189,6 +183,14 @@ export default function JobPage({ jobId }: { jobId: string }) {
           </div>
           <Monitor job={job} transcript={transcript} translation={translation} dub={dub} />
         </>
+      )}
+
+      {showEditor && (
+        <div className="space-y-6">
+          {translation?.review && <QACard translation={translation} />}
+          <ScriptEditor jobId={jobId} canRevoice={canRevoice} onRevoiced={setJob}
+            onGenerated={() => { setEditing(false); setStreamKey((k) => k + 1); void refresh(); }} />
+        </div>
       )}
 
       {running && !hasOutput && <OnAir log={log} live={live} />}
@@ -199,7 +201,7 @@ export default function JobPage({ jobId }: { jobId: string }) {
           <QualityPanel job={job} />
           <ReportCard job={job} />
           {/* 4 panels tile 2x2; with 3, the tape library takes the full last row */}
-          <div className={showQA ? "" : "xl:col-span-2"}><Tapes job={job} /></div>
+          <div className={showQA ? "" : "xl:col-span-2"}><Tapes job={job} wide={!showQA} /></div>
         </div>
       )}
     </div>

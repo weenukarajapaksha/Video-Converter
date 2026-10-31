@@ -25,14 +25,14 @@ const KIND = {
   json: { icon: FileJson, color: "var(--muted)" },
 };
 
-export function Tapes({ job }: { job: JobSummary }) {
+export function Tapes({ job, wide = false }: { job: JobSummary; wide?: boolean }) {
   const available = TAPES.filter((d) => job.artifacts.includes(d.name));
   const sizes: Record<string, number | null> = job.artifact_sizes ?? {};
 
   return (
     <Panel eyebrow="Deliverables" title="Tape library" icon={<Download className="size-4" />}>
       {available.length === 0 ? <p className="text-sm text-muted">Nothing recorded yet.</p> : (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={`grid gap-2.5 sm:grid-cols-2 ${wide ? "xl:grid-cols-4" : ""}`}>
           {available.map((d) => {
             const { icon: Icon, color } = KIND[d.kind];
             const ext = d.name.split(".").pop()!.toUpperCase();

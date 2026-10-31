@@ -8,6 +8,7 @@ import { Chip, ErrorNote, Panel, PatchToggle } from "../components/ui";
 const LANGUAGES = ["English", "Spanish", "French", "German", "Japanese", "Korean", "Sinhala", "Hindi"];
 const MIN_S = 30;
 const MAX_S = 180;
+const SPEAKER_CHOICES = ["auto", 1, 2, 3, 4, 5, 6] as const;
 
 const PATH = [
   { icon: AudioLines, title: "Separate", text: "Demucs lifts the Chinese voices off the music & effects bed." },
@@ -26,6 +27,7 @@ export default function UploadPage() {
   const [provider, setProvider] = useState<"gemini" | "edge">("edge");
   const [review, setReview] = useState(true);
   const [lipsync, setLipsync] = useState(false);
+  const [speakers, setSpeakers] = useState<(typeof SPEAKER_CHOICES)[number]>("auto");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function UploadPage() {
     form.append("tts_provider", provider);
     form.append("review", String(review));
     form.append("lipsync", String(lipsync));
+    if (speakers !== "auto") form.append("num_speakers", String(speakers));
     try {
       const job = await api.createJob(form);
       navigate(`/jobs/${job.job_id}`);
@@ -179,6 +182,23 @@ export default function UploadPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <span className="eyebrow mb-2 block" id="speakers-label">Speakers</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-labelledby="speakers-label">
+                {SPEAKER_CHOICES.map((n) => (
+                  <button key={n} type="button" role="radio" aria-checked={n === speakers}
+                    onClick={() => setSpeakers(n)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition ${n === speakers
+                      ? "border-signal bg-signal text-signal-ink" : "border-line bg-panel-2 text-muted hover:text-text"}`}>
+                    {n === "auto" ? "Auto" : n}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-faint">
+                Know how many people talk? Setting it stops one voice being split into several.
+              </p>
             </div>
 
             <div className="space-y-2">

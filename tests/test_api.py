@@ -104,6 +104,25 @@ def test_translation_edit_changes_wording_but_never_timing(client, sample_video,
     assert "synthesize" in client.app.state.manager.api_state(job)["edited"]
 
 
+def test_speaker_count_option_is_validated_and_stored(client, sample_video):
+    assert _upload(client, sample_video, num_speakers="0").status_code == 422
+    resp = _upload(client, sample_video, num_speakers="3")
+    assert resp.status_code == 201 and resp.json()["options"]["num_speakers"] == 3
+    _wait(client, resp.json()["job_id"])
+
+
+def test_regenerate_line_requires_an_existing_dub(client, sample_video):
+    job_id = _upload(client, sample_video).json()["job_id"]
+    _wait(client, job_id)
+    resp = client.post(f"/api/jobs/{job_id}/lines/0/regenerate", json={"text": "Hi"})
+    assert resp.status_code == 409 and "no dub" in resp.json()["detail"]
+
+
+def test_voice_preview_rejects_unknown_voices(client):
+    assert client.get("/api/voices/edge/not-a-voice/preview").status_code == 404
+    assert client.get("/api/voices/nope/x/preview").status_code == 422
+
+
 def test_voice_catalog_lists_genders(client):
     voices = client.get("/api/voices", params={"provider": "edge"}).json()
     assert {v["gender"] for v in voices} == {"male", "female"}
@@ -150,3 +169,18 @@ def test_quality_report_tolerates_missing_artifacts(client, sample_video):
     _wait(client, job_id)
     body = client.get(f"/api/jobs/{job_id}/quality").json()
     assert body == {"warnings": []}
+
+
+def test_voice_catalog_is_filtered_to_the_target_language(isolated_settings):
+    from fastapi.testclient import TestClient
+
+    from dubber.api.app import create_app
+
+    client = TestClient(create_app())
+    spanish = client.get("/api/voices", params={"provider": "edge", "language": "Spanish"}).json()
+    assert spanish and all(v["id"].startswith("es-") for v in spanish)
+    assert {v["gender"] for v in spanish} == {"male", "female"}
+    unknown = client.get("/api/voices", params={"provider": "edge", "language": "Klingon"}).json()
+    assert all(v["id"].startswith("en-") for v in unknown)  # falls back to English
+    gemini = client.get("/api/voices", params={"provider": "gemini", "language": "Spanish"}).json()
+    assert any(v["id"] == "Puck" for v in gemini)  # Gemini voices are multilingual

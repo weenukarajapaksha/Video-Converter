@@ -46,21 +46,38 @@ def median_f0(audio: np.ndarray, spans: list[tuple[float, float]]) -> float | No
     return float(np.median(voiced_f0)) if voiced_f0.size else None
 
 
-def pick_voices(profiles: list[tuple[str, Gender, float]], provider: str) -> dict[str, str]:
-    """Assign distinct catalog voices; the most talkative speakers get first pick."""
-    from dubber.voices_catalog import VOICES as CATALOG
+def pick_voices(profiles: list[tuple[str, Gender, float]], provider: str,
+                f0s: dict[str, float | None] | None = None,
+                language: str = "English") -> dict[str, str]:
+    """Assign distinct catalog voices; the most talkative speakers get first pick.
 
-    catalog = CATALOG[provider]
+    Among unused voices of the speaker's gender, the one whose pitch is closest to
+    the speaker's (in log-frequency, i.e. musical distance) wins, so a deep-voiced
+    speaker gets a deep English voice. Without a pitch, catalog order decides.
+    """
+    from dubber.voices_catalog import catalog_for
+
+    catalog = catalog_for(provider, language)  # native voices for the target language
+    f0s = f0s or {}
     used: set[str] = set()
     chosen: dict[str, str] = {}
-    for speaker, gender, _ in sorted(profiles, key=lambda p: -p[2]):
+    for speaker, gender, _ in sorted(profiles, key=lambda p: (-p[2], p[0])):
         wanted = gender if gender != "unknown" else "male"
-        pool = ([v["id"] for v in catalog if v["gender"] == wanted and v["id"] not in used]
-                or [v["id"] for v in catalog if v["id"] not in used]
-                or [v["id"] for v in catalog])
-        chosen[speaker] = pool[0]
-        used.add(pool[0])
+        pool = ([v for v in catalog if v["gender"] == wanted and v["id"] not in used]
+                or [v for v in catalog if v["id"] not in used]
+                or list(catalog))
+        target = f0s.get(speaker)
+        if target and target > 0:
+            pool = sorted(pool, key=lambda v: abs(np.log(v["f0_hz"] / target)))
+        chosen[speaker] = pool[0]["id"]
+        used.add(pool[0]["id"])
     return chosen
+
+
+def voice_f0(provider: str, voice: str) -> float | None:
+    from dubber.voices_catalog import VOICES as CATALOG
+
+    return next((v["f0_hz"] for v in CATALOG.get(provider, []) if v["id"] == voice), None)
 
 
 class VoicesStage(Stage):
@@ -82,10 +99,16 @@ class VoicesStage(Stage):
                           sum(e - s for s, e in spans)))
             progress((i + 1) / max(1, len(transcript.speakers)), f"analysed {speaker}")
 
-        voices = pick_voices(stats, provider)
+        language = job.option("target_language", get_settings().target_language)
+        voices = pick_voices(stats, provider, f0s, language)
         job.write_model(VOICES, VoiceMap(provider=provider, speakers={
             spk: SpeakerProfile(
                 speaker=spk, gender=gender, speaking_time_s=round(talk, 2),
                 median_f0_hz=round(f0s[spk], 1) if f0s[spk] else None, voice=voices[spk],
             ) for spk, gender, talk in stats
         }))
+        # Casting rationale for the UI/report (VoiceMap has no per-voice pitch field).
+        job.write_json("voice_casting.json", {spk: {
+            "speaker_f0_hz": round(f0s[spk], 1) if f0s[spk] else None,
+            "voice": voices[spk], "voice_f0_hz": voice_f0(provider, voices[spk]),
+        } for spk, _, _ in stats})

@@ -1,6 +1,8 @@
 """Task 3: context-aware, duration-aware translation with a self-critique pass.
 
-1. Draft: the whole conversation is adapted line by line under word budgets.
+1. Draft: the whole conversation is adapted line by line under word budgets;
+   low-confidence ASR words are flagged so homophone errors are repaired from
+   context (each repair is recorded as ``asr_fix``).
 2. Critique: a second LLM pass acts as a QA reviewer (LLM-as-judge). It scores
    accuracy / naturalness / tone and proposes fixes for flagged lines only.
 3. Revise: fixes that respect the time budget replace the draft lines. The
@@ -56,11 +58,13 @@ class TranslateStage(Stage):
             segments=[TranslatedSegment(
                 id=s.id, start=s.start, end=s.end, speaker=s.speaker, source_text=s.text,
                 text=lines[s.id].text, emotion=lines[s.id].emotion, max_duration_s=b,
+                asr_fix=lines[s.id].asr_fix or None,
             ) for s, b in zip(segments, budgets)],
         ))
+        fixes = sum(1 for line in lines.values() if line.asr_fix)
         if review:
             progress(1.0, f"scores A{review.accuracy}/N{review.naturalness}/T{review.tone}, "
-                          f"{len(review.issues)} line(s) revised")
+                          f"{len(review.issues)} line(s) revised, {fixes} ASR fix(es)")
 
     @staticmethod
     def _review(segments, budgets, lines, model, target, usage) -> TranslationReview | None:

@@ -6,6 +6,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Literal
@@ -19,9 +20,11 @@ from pydantic import BaseModel
 from dubber import artifacts
 from dubber.api.manager import TERMINAL, JobManager
 from dubber.config import get_settings
-from dubber.pipeline import Job
-from dubber.schemas import Transcript, Translation, VideoMetadata, VoiceMap
-from dubber.voices_catalog import VOICES
+from dubber.errors import DubberError, TransientError
+from dubber.pipeline import Job, Pipeline
+from dubber.schemas import (SynthesizedLine, Transcript, Translation, VideoMetadata,
+                            VoiceMap)
+from dubber.voices_catalog import VOICES, catalog_for
 
 WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 
@@ -56,8 +59,23 @@ class JobSummary(BaseModel):
     metadata: VideoMetadata | None = None
 
 
+class RevoiceRequest(BaseModel):
+    text: str | None = None
+    emotion: str | None = None
+
+
+class RevoiceResult(BaseModel):
+    line: SynthesizedLine
+    max_duration_s: float
+    fits: bool
+    elapsed_s: float
+    job: JobSummary
+
+
 LOW_CONFIDENCE = 0.6
 OVERFLOW_TOLERANCE_S = 0.05
+PREVIEW_TEXT = "Hi, this is how I sound in your dubbed video."
+PREVIEW_DIR = ".voice_previews"
 
 
 def _read_json(job: Job, name: str):
@@ -204,16 +222,19 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         tts_provider: Literal["gemini", "edge"] = Form(settings.tts_provider),
         review: bool = Form(False),
         lipsync: bool = Form(False),
+        num_speakers: int | None = Form(None),
         mgr: JobManager = Depends(get_manager),
     ):
         if not (file.filename or "").lower().endswith(".mp4"):
             raise HTTPException(415, "only .mp4 files are supported")
+        if num_speakers is not None and not 1 <= num_speakers <= 10:
+            raise HTTPException(422, "num_speakers must be between 1 and 10")
         with tempfile.TemporaryDirectory() as tmp:
             upload = Path(tmp) / Path(file.filename).name
             with upload.open("wb") as out:
                 shutil.copyfileobj(file.file, out)
             options = {"target_language": target_language, "tts_provider": tts_provider,
-                       "review": review, "lipsync": lipsync}
+                       "review": review, "lipsync": lipsync, "num_speakers": num_speakers}
             job = Job.create(mgr.jobs_dir, upload, options)
         mgr.submit(job)
         return summary(mgr, job)
@@ -327,6 +348,43 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         mgr.mark_edited(job, "synthesize")
         return body
 
+    @app.post("/api/jobs/{job_id}/lines/{line_id}/regenerate", response_model=RevoiceResult)
+    def regenerate_line(line_id: int, body: RevoiceRequest | None = None,
+                        job: Job = Depends(get_job), mgr: JobManager = Depends(get_manager)):
+        """Re-voice one edited line, then re-mix and re-render (seconds, not minutes)."""
+        if mgr.any_busy():
+            raise HTTPException(409, "a job is running; try again when it finishes")
+        require_editable(mgr, job)
+        if not job.path(artifacts.DUB_TRACK).exists():
+            raise HTTPException(409, "no dub generated yet - run the pipeline first")
+        body = body or RevoiceRequest()
+
+        def work() -> SynthesizedLine:
+            from dubber.stages.mix import MixStage
+            from dubber.stages.render import RenderStage
+            from dubber.stages.synthesize import revoice_line
+
+            line = revoice_line(job, line_id, body.text, body.emotion)
+            Pipeline([MixStage(), RenderStage()]).run(Job(job.root), force=["mix"])
+            # The lip-synced video no longer matches the new audio.
+            job.path(artifacts.LIPSYNC_VIDEO).unlink(missing_ok=True)
+            return line
+
+        t0 = time.perf_counter()
+        try:
+            line = mgr.run_exclusive(work)
+        except TransientError as exc:
+            raise HTTPException(503, str(exc)) from None
+        except DubberError as exc:
+            raise HTTPException(422, str(exc)) from None
+        fresh = Job(job.root)
+        seg = next(s for s in fresh.read_model(artifacts.TRANSLATION, Translation).segments
+                   if s.id == line_id)
+        return RevoiceResult(
+            line=line, max_duration_s=seg.max_duration_s,
+            fits=line.final_duration_s <= seg.max_duration_s + OVERFLOW_TOLERANCE_S,
+            elapsed_s=round(time.perf_counter() - t0, 2), job=summary(mgr, fresh))
+
     # -- downloads & reports -------------------------------------------------------
     @app.get("/api/jobs/{job_id}/files/{name}")
     def get_file(name: str, download: bool = False, job: Job = Depends(get_job)):
@@ -375,8 +433,26 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         return build_quality(job)
 
     @app.get("/api/voices")
-    def list_voices(provider: Literal["gemini", "edge"] = "gemini"):
-        return VOICES[provider]
+    def list_voices(provider: Literal["gemini", "edge"] = "gemini", language: str | None = None):
+        return catalog_for(provider, language) if language else VOICES[provider]
+
+    @app.get("/api/voices/{provider}/{voice_id}/preview")
+    def voice_preview(provider: Literal["gemini", "edge"], voice_id: str,
+                      text: str = PREVIEW_TEXT, mgr: JobManager = Depends(get_manager)):
+        """Short sample of a voice, cached on disk (Gemini previews use API quota)."""
+        if voice_id not in {v["id"] for v in VOICES[provider]}:
+            raise HTTPException(404, f"unknown {provider} voice '{voice_id}'")
+        from dubber.tts import get_provider
+
+        try:
+            speech = get_provider(provider).synthesize(
+                text.strip()[:200] or PREVIEW_TEXT, voice_id, "neutral", "", "English",
+                mgr.jobs_dir / PREVIEW_DIR)
+        except DubberError as exc:
+            raise HTTPException(502, f"preview failed: {exc}") from None
+        headers = {"X-Quota-Warning": "Gemini TTS previews count against your API quota"} \
+            if provider == "gemini" and not speech.cached else None
+        return FileResponse(speech.path, media_type="audio/wav", headers=headers)
 
     @app.get("/api/health")
     def health():

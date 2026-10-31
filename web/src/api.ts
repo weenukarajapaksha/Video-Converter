@@ -58,6 +58,7 @@ export interface TranslatedSegment {
   text: string;
   emotion: string;
   max_duration_s: number;
+  asr_fix?: string | null;
 }
 
 export interface TranslationIssue {
@@ -120,6 +121,14 @@ export interface SynthesizedLine {
 
 export interface DubTrack {
   lines: SynthesizedLine[];
+}
+
+export interface RevoiceResult {
+  line: SynthesizedLine;
+  max_duration_s: number;
+  fits: boolean;
+  elapsed_s: number;
+  job: JobSummary;
 }
 
 export interface SpeakerProfile {
@@ -206,12 +215,25 @@ export const api = {
   voices: (id: string) => request<VoiceMap>(`/api/jobs/${id}/voices`),
   saveVoices: (id: string, v: VoiceMap) =>
     request<VoiceMap>(`/api/jobs/${id}/voices`, json("PUT", v)),
-  voiceCatalog: (provider: string) =>
-    request<VoiceOption[]>(`/api/voices?provider=${encodeURIComponent(provider)}`),
+  voiceCatalog: (provider: string, language?: string) =>
+    request<VoiceOption[]>(`/api/voices?provider=${encodeURIComponent(provider)}` +
+      (language ? `&language=${encodeURIComponent(language)}` : "")),
   report: (id: string) => request<Report>(`/api/jobs/${id}/report`),
   quality: (id: string) => request<Quality>(`/api/jobs/${id}/quality`),
-  fileUrl: (id: string, name: string, download = false) =>
-    `/api/jobs/${id}/files/${name}${download ? "?download=true" : ""}`,
+  regenerateLine: (id: string, lineId: number, body: { text?: string; emotion?: string }) =>
+    request<RevoiceResult>(`/api/jobs/${id}/lines/${lineId}/regenerate`, json("POST", body)),
+  voicePreviewUrl: (provider: string, voice: string) =>
+    `/api/voices/${encodeURIComponent(provider)}/${encodeURIComponent(voice)}/preview`,
+  /** `version` busts the browser cache when a file is re-rendered in place. */
+  fileUrl: (id: string, name: string, download = false, version?: string | null) => {
+    const q = new URLSearchParams();
+    if (download) q.set("download", "true");
+    if (version) q.set("v", version);
+    const qs = q.toString();
+    return `/api/jobs/${id}/files/${name}${qs ? `?${qs}` : ""}`;
+  },
+  /** Changes whenever the final video is re-rendered (e.g. after re-voicing a line). */
+  renderVersion: (job: JobSummary) => job.stages.render?.finished_at ?? null,
   events: (id: string) => new EventSource(`/api/jobs/${id}/events`),
 };
 

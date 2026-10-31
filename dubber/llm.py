@@ -31,6 +31,10 @@ FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-flash-latest"]
 COOLDOWN_S = 120.0
 REQUEST_TIMEOUT_MS = 120_000
 
+class QuotaExhausted(DubberError):
+    """Daily quota used up: try another model, but never retry the same one."""
+
+
 _cooldown: dict[str, float] = {}
 _cooldown_lock = threading.Lock()
 
@@ -63,6 +67,9 @@ def classify(exc: Exception) -> Exception:
     from google.genai import errors
 
     if isinstance(exc, errors.APIError):
+        if exc.code == 429 and "PerDay" in str(exc):
+            # A daily quota will not come back within this run: retrying wastes minutes.
+            return QuotaExhausted(f"Gemini daily quota exhausted for this model: {exc.message}")
         if exc.code in _RETRYABLE_HTTP:
             return TransientError(f"Gemini {exc.code}: {exc.message}")
         return DubberError(f"Gemini {exc.code}: {exc.message}")
@@ -108,12 +115,17 @@ def generate(model: str, system: str, prompt: str, schema: type[T], usage: Usage
             break
         except Exception as exc:  # noqa: BLE001 - re-raised as a classified error
             err = classify(exc)
-            if isinstance(err, TransientError):
+            if isinstance(err, (TransientError, QuotaExhausted)):
                 _trip(name)
                 if i + 1 < len(candidates):
                     log.warning("%s unavailable (%s); falling back to %s",
                                 name, err, candidates[i + 1])
                     continue
+                if isinstance(err, QuotaExhausted):
+                    err = QuotaExhausted(
+                        "Gemini daily free-tier quota is exhausted for every fallback model. "
+                        "Enable billing on the API key, set DUBBER_TRANSLATION_MODEL to a "
+                        "-lite model, or retry after the daily reset.")
             raise err from exc
 
     meta = resp.usage_metadata

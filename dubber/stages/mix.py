@@ -60,6 +60,17 @@ def integrated_loudness(path) -> float | None:
     return value if np.isfinite(value) and value > -70 else None
 
 
+def source_loudness(job: Job) -> float:
+    """Integrated loudness of the original soundtrack, measured once per job: the
+    source never changes, and the measurement is ~40% of a single-line re-voice."""
+    cache = job.path("source_loudness.json")
+    if cache.exists():
+        return json.loads(cache.read_text("utf-8"))["lufs"]
+    lufs = integrated_loudness(job.path(ORIGINAL_AUDIO)) or -16.0
+    job.write_json("source_loudness.json", {"lufs": lufs})
+    return lufs
+
+
 class MixStage(Stage):
     name = "mix"
     outputs = (DUB_MIX,)
@@ -88,7 +99,7 @@ class MixStage(Stage):
         sf.write(raw, mix, sr, subtype="FLOAT")
 
         progress(0.6, "loudness normalization")
-        target = integrated_loudness(job.path(ORIGINAL_AUDIO)) or -16.0
+        target = source_loudness(job)
         target = float(np.clip(target, -30.0, -9.0))
         media.run_ffmpeg("-i", raw, "-af",
                          f"loudnorm=I={target:.1f}:TP=-1.5:LRA=11,aresample={sr}",

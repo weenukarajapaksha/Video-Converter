@@ -3,7 +3,8 @@
 Translation for dubbing is not plain MT: every line has a hard time budget, so the
 model gets the whole conversation for context plus, per line, the speaker, the
 seconds available and a word budget, and returns natural spoken English plus an
-emotion tag that drives expressive TTS.
+emotion tag that drives expressive TTS. Low-confidence ASR words are marked so the
+model can repair homophone errors from context (reported back as ``asr_fix``).
 """
 
 from __future__ import annotations
@@ -21,10 +22,17 @@ CHUNK_LINES = 60  # lines per request; long videos are processed in windows
 CONTEXT_LINES = 8  # previously translated lines shown for continuity
 
 
+LOW_CONFIDENCE = 0.6  # ASR word probability below which a word is flagged as uncertain
+MAX_UNCERTAIN = 6  # per line, to keep prompts short
+
+
 class LineOut(BaseModel):
     id: int
     text: str = Field(description="the spoken target-language line")
     emotion: str = Field(description=f"one of: {', '.join(EMOTIONS)}")
+    asr_fix: str = Field(default="", description=(
+        "if the Chinese source contains a likely ASR error you corrected from context, "
+        "'wrong→right' (e.g. '丹代→唐代'); otherwise empty"))
 
 
 class LinesOut(BaseModel):
@@ -41,12 +49,27 @@ Rules:
 - HARD LIMIT: each line must not exceed its max_words. If the meaning cannot fit, simplify or drop filler; never cut key information.
 - Prefer contractions and short spoken phrasing. No stage directions, notes, quotes or brackets.
 - Keep one output line per input id; never merge or split lines.
-- emotion: the delivery emotion of the ORIGINAL line, one of: {emotions}."""
+- emotion: the delivery emotion of the ORIGINAL line, one of: {emotions}.
+- The Chinese is automatic speech recognition output and may contain homophone or near-homophone
+  errors (same or similar pinyin, wrong characters), especially in words marked [uncertain: ...]
+  with their recognition confidence. Use the conversation and topic to infer what was actually
+  said and translate THAT. When you correct such an error, report it in asr_fix as 'wrong→right'
+  (e.g. '丹代→唐代'); otherwise leave asr_fix empty. Do not "correct" words that make sense."""
+
+
+def uncertain_words(seg: Segment, threshold: float = LOW_CONFIDENCE) -> list[tuple[str, float]]:
+    """Low-confidence ASR words of a line, least confident first."""
+    words = [(w.text.strip(), w.probability) for w in seg.words
+             if w.probability is not None and w.probability < threshold and w.text.strip()]
+    return sorted(words, key=lambda wp: wp[1])[:MAX_UNCERTAIN]
 
 
 def _line_spec(seg: Segment, budget: float) -> str:
-    return (f'[{seg.id}] {seg.speaker} {seg.start:.1f}-{seg.end:.1f}s '
+    spec = (f'[{seg.id}] {seg.speaker} {seg.start:.1f}-{seg.end:.1f}s '
             f'(max {budget:.1f}s, max_words={word_budget(budget)}): {seg.text}')
+    if unsure := uncertain_words(seg):
+        spec += " [uncertain: " + ", ".join(f"{w}({p:.2f})" for w, p in unsure) + "]"
+    return spec
 
 
 def translate_lines(segments: list[Segment], budgets: list[float], model: str,
@@ -143,7 +166,8 @@ def _request(model: str, system: str, prompt: str, ids: set[int],
             if line.id in missing and line.text.strip():
                 emotion = line.emotion.lower().strip()
                 got[line.id] = LineOut(id=line.id, text=line.text.strip(),
-                                       emotion=emotion if emotion in EMOTIONS else "neutral")
+                                       emotion=emotion if emotion in EMOTIONS else "neutral",
+                                       asr_fix=(line.asr_fix or "").strip())
     if missing := ids - got.keys():
         raise llm.TransientError(f"model did not translate lines {sorted(missing)}")
     return got

@@ -83,10 +83,33 @@ class JobManager:
         live = self._live.get(job.id)
         if live and live.state in {"queued", "running"}:
             return live.state
-        return self.api_state(job).get("state", "idle")
+        saved = self.api_state(job).get("state", "idle")
+        if saved in {"idle", "failed"}:
+            # Jobs run or resumed from the CLI only update the manifest; derive their
+            # state from it so they show correctly in the UI.
+            return self._manifest_state(job) or saved
+        return saved
+
+    @staticmethod
+    def _manifest_state(job: Job) -> str | None:
+        records = job.manifest.stages.values()
+        if any(r.status == "failed" for r in records):
+            return "failed"
+        if records and all(r.status == "done" for r in records) \
+                and job.path("output.mp4").exists():
+            return "done"
+        return None
 
     def is_busy(self, job: Job) -> bool:
         return self.state(job) in {"queued", "running"}
+
+    def any_busy(self) -> bool:
+        return any(live.state in {"queued", "running"} for live in self._live.values())
+
+    def run_exclusive(self, fn: Callable[[], object]) -> object:
+        """Run short work (e.g. re-voicing one line) on the single pipeline worker so it
+        never overlaps a running job, and wait for its result."""
+        return self._executor.submit(fn).result()
 
     def events_since(self, job_id: str, index: int) -> list[dict]:
         live = self._live.get(job_id)

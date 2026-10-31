@@ -96,6 +96,8 @@ class TranslatedSegment(BaseModel):
     emotion: str = "neutral"
     # Time the line may occupy: its own slot plus any silence before the next line.
     max_duration_s: float
+    # ASR error the translator corrected from context, e.g. "丹代→唐代".
+    asr_fix: str | None = None
 
 
 class TranslationIssue(BaseModel):

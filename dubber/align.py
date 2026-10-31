@@ -160,7 +160,57 @@ def assign_speakers(segments: list[Segment], turns: list[Turn], max_gap: float =
             cur.append(word)
         emit(cur, cur_lab, seg)
 
-    return relabel_speakers(_merge_fragments(lines))
+    return relabel_speakers(merge_short_lines(_merge_fragments(lines)))
+
+
+def _is_short(line: Segment, min_dur: float) -> bool:
+    return line.duration < min_dur or len(re.sub(r"[\s，。？！、,.?!；;：:…]", "", line.text)) <= 2
+
+
+def _join(a: Segment, b: Segment) -> Segment:
+    words = a.words + b.words
+    probs = [w.probability for w in words if w.probability is not None]
+    confidence = (round(sum(probs) / len(probs), 3) if probs
+                  else a.confidence if b.confidence is None else b.confidence)
+    return a.model_copy(update={"end": b.end, "text": a.text + b.text, "words": words,
+                                "confidence": confidence})
+
+
+def merge_short_lines(lines: list[Segment], min_dur: float = 1.0, max_gap: float = 0.35,
+                      max_merged: float = 8.0) -> list[Segment]:
+    """Merge micro-lines into an adjacent line of the same speaker.
+
+    A 0.4 s line gets a 0.4 s English budget, which forces one-word translations
+    ("没有测绘" -> "Blank."). A short line (< ``min_dur`` or <= 2 characters) is joined
+    with the neighbouring line of the *same* speaker that has the smaller gap, if the
+    gap is at most ``max_gap`` and the result stays within ``max_merged`` seconds.
+    On (near-)equal gaps, a fragment without sentence-final punctuation continues
+    into the next line ("日本人的话" + "虽然难听"), one with it closes the previous line.
+    A neighbour of a different speaker is never merged: that is real turn-taking.
+    """
+    out = sorted(lines, key=lambda s: s.start)
+    changed = True
+    while changed:
+        changed = False
+        for i, cur in enumerate(out):
+            if not _is_short(cur, min_dur):
+                continue
+            prefer = i - 1 if SENTENCE_END.search(cur.text.strip()) else i + 1
+            candidates = []
+            for j in (i - 1, i + 1):
+                if 0 <= j < len(out) and out[j].speaker == cur.speaker:
+                    a, b = (out[j], cur) if j < i else (cur, out[j])
+                    gap = b.start - a.end
+                    if gap <= max_gap and b.end - a.start <= max_merged:
+                        candidates.append((round(max(gap, 0.0) / 0.1), j != prefer, j))
+            if not candidates:
+                continue
+            *_, j = min(candidates)
+            lo = min(i, j)
+            out[lo:lo + 2] = [_join(out[lo], out[lo + 1])]
+            changed = True
+            break
+    return [s.model_copy(update={"id": n}) for n, s in enumerate(out)]
 
 
 def relabel_speakers(lines: list[Segment]) -> list[Segment]:
@@ -195,22 +245,26 @@ ENGLISH_WPS = 2.6
 
 
 def time_budgets(segments: list[Segment], total_duration: float, min_pause: float = 0.15,
-                 max_extend: float = 1.5) -> list[float]:
+                 max_extend: float = 1.5, min_budget: float = 0.8) -> list[float]:
     """Max seconds each line may last: its own slot plus following silence, capped.
 
     A line may run past its source end into the pause before the *next* line
     (keeping ``min_pause`` of breathing room), but never more than ``max_extend``
     seconds past where the original speaker stopped. Overlapping source lines keep
-    their own duration (the overlap is real, not a sync error).
+    their own duration (the overlap is real, not a sync error). Very short lines get
+    at least ``min_budget`` seconds when the room up to the next line allows it
+    (giving up the breathing pause), so they aren't squeezed into one-word renderings.
     """
     ordered = sorted(range(len(segments)), key=lambda i: segments[i].start)
     budgets = [0.0] * len(segments)
     for rank, i in enumerate(ordered):
         seg = segments[i]
-        next_start = (segments[ordered[rank + 1]].start - min_pause if rank + 1 < len(ordered)
-                      else total_duration)
+        has_next = rank + 1 < len(ordered)
+        room = (segments[ordered[rank + 1]].start if has_next else total_duration)
+        next_start = room - min_pause if has_next else room
         limit = min(next_start, seg.end + max_extend, total_duration)
-        budgets[i] = round(max(seg.duration, limit - seg.start), 3)
+        floor = min(min_budget, min(room, total_duration) - seg.start)
+        budgets[i] = round(max(seg.duration, limit - seg.start, floor), 3)
     return budgets
 
 

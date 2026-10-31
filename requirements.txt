@@ -1,0 +1,39 @@
+# Exact versions verified end-to-end on Windows 11 + Python 3.12 + RTX 3050 (CUDA 12.6).
+# The package itself is defined in pyproject.toml; this file pins a known-good set.
+#
+#   pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+#   pip install -r requirements.txt
+#   pip install -e .
+#
+# (CPU-only: install torch/torchaudio 2.7.1 from the default index instead.)
+
+# --- ML / audio
+faster-whisper==1.2.1
+ctranslate2==4.8.4
+pyannote.audio==3.4.0
+demucs==4.1.0
+librosa==1.0.0
+soundfile==0.14.0
+numpy==2.5.4
+zhconv==1.4.3
+huggingface_hub==2.4.0
+filelock==4.2.4
+
+# --- AI APIs / TTS
+google-genai==2.34.0
+edge-tts==7.3.1
+
+# --- API server
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+
+# --- core
+pydantic==2.14.2
+pydantic-settings==2.16.2
+typer==0.27.3
+rich==15.0.0
+
+# --- dev / tests
+pytest==9.2.0
+httpx==0.28.1
