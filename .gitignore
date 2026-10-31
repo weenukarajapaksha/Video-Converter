@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
+.claude/settings.local.json
 
 # pipeline workspaces & model caches
 jobs/

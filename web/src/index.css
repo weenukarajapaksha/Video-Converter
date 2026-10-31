@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --color-ink-950: #07080d;
+  --color-ink-900: #0d0f17;
+  --color-ink-800: #151824;
+  --color-ink-700: #1f2333;
+  --color-ink-600: #2c3146;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-950 text-slate-200 antialiased;
+  background-image:
+    radial-gradient(60rem 30rem at 10% -10%, rgb(99 102 241 / 0.12), transparent),
+    radial-gradient(50rem 30rem at 110% 10%, rgb(217 70 239 / 0.08), transparent);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@utility card {
+  @apply rounded-2xl border border-white/5 bg-ink-900/80 shadow-xl shadow-black/30 backdrop-blur;
+}
+
+@utility input {
+  @apply w-full rounded-lg border border-white/10 bg-ink-800 px-3 py-2 text-sm text-slate-100
+    outline-none transition focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/20;
+}
+
+@utility btn {
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2
+    text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-linear-to-r from-indigo-500 to-fuchsia-500 text-white shadow-lg
+    shadow-indigo-500/20 hover:brightness-110;
+}
+
+@utility btn-ghost {
+  @apply btn border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10;
+}
