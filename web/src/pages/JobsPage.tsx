@@ -1,67 +1,77 @@
-import { FileVideo, Loader2, RefreshCw } from "lucide-react";
+import { Clapperboard, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, fmtDuration, fmtUsd, type JobSummary } from "../api";
-import { Card, ErrorNote, ProgressBar, StateBadge } from "../components/ui";
+import { api, fmtDuration, fmtTC, fmtUsd, type JobSummary } from "../api";
+import { ErrorNote, StatusPill } from "../components/ui";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => api.listJobs().then(setJobs).catch((e) => setError(e.message));
-
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 4000);
-    return () => clearInterval(timer);
+    const load = () => api.listJobs().then(setJobs).catch((e) => setError(e.message));
+    void load();
+    const timer = window.setInterval(load, 4000);
+    return () => window.clearInterval(timer);
   }, []);
 
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (!jobs) return <div className="grid place-items-center py-32 text-muted"><Loader2 className="size-6 animate-spin" /></div>;
+
   return (
-    <Card title="Dubbing jobs" icon={<FileVideo className="size-4 text-indigo-300" />}
-      actions={<button className="btn-ghost" onClick={load}><RefreshCw className="size-4" />Refresh</button>}>
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {!jobs ? (
-        <div className="grid place-items-center py-16 text-slate-500"><Loader2 className="size-6 animate-spin" /></div>
-      ) : jobs.length === 0 ? (
-        <p className="py-16 text-center text-slate-500">
-          No jobs yet. <a href="#/" className="text-indigo-300 hover:underline">Upload a video</a> to start.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="pb-3 font-medium">Video</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Progress</th>
-                <th className="pb-3 font-medium">Length</th>
-                <th className="pb-3 font-medium">Processing</th>
-                <th className="pb-3 font-medium">Cost</th>
-                <th className="pb-3 font-medium">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {jobs.map((j) => (
-                <tr key={j.job_id} className="cursor-pointer transition hover:bg-white/[0.03]"
-                  onClick={() => { window.location.hash = `/jobs/${j.job_id}`; }}>
-                  <td className="py-3 pr-4">
-                    <div className="font-medium text-slate-100">{j.input_name}</div>
-                    <div className="font-mono text-xs text-slate-500">{j.job_id}</div>
-                  </td>
-                  <td className="py-3 pr-4"><StateBadge state={j.state} /></td>
-                  <td className="w-40 py-3 pr-4">
-                    <ProgressBar value={j.progress}
-                      tone={j.state === "failed" ? "rose" : j.state === "done" ? "emerald" : "indigo"} />
-                  </td>
-                  <td className="py-3 pr-4 text-slate-300">{fmtDuration(j.metadata?.duration_s)}</td>
-                  <td className="py-3 pr-4 text-slate-300">{fmtDuration(j.total_duration_s)}</td>
-                  <td className="py-3 pr-4 text-slate-300">{fmtUsd(j.total_cost_usd)}</td>
-                  <td className="py-3 text-slate-400">{new Date(j.created_at).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <span className="eyebrow">Archive</span>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight">Sessions</h1>
         </div>
+        <a href="#/" className="btn-signal"><Plus className="size-4" /> New session</a>
+      </div>
+
+      {jobs.length === 0 ? (
+        <div className="panel grid place-items-center gap-3 py-20 text-center">
+          <Clapperboard className="size-8 text-signal" />
+          <p className="font-display text-lg font-bold">No takes yet</p>
+          <p className="text-sm text-muted">Upload a Chinese video to start your first dubbing session.</p>
+        </div>
+      ) : (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {jobs.map((j) => {
+            const running = j.state === "running" || j.state === "queued";
+            return (
+              <li key={j.job_id}>
+                <a href={`#/jobs/${j.job_id}`}
+                  className="panel group block overflow-hidden transition hover:-translate-y-0.5 hover:border-line-strong">
+                  <div className="relative aspect-video bg-black">
+                    <video src={`${api.fileUrl(j.job_id, "input.mp4")}#t=1`} preload="metadata" muted playsInline
+                      className="size-full object-cover opacity-80 transition group-hover:opacity-100" />
+                    <div className="absolute left-3 top-3 rounded-full bg-black/70 backdrop-blur-sm"><StatusPill state={j.state} /></div>
+                    {j.metadata && (
+                      <span className="tc absolute bottom-3 right-3 rounded bg-black/70 px-1.5 py-0.5 text-[0.7rem] text-white">
+                        {fmtTC(j.metadata.duration_s).slice(3)}
+                      </span>
+                    )}
+                    {running && (
+                      <div className="absolute inset-x-0 bottom-0 h-1 bg-black/50">
+                        <div className="h-full bg-signal transition-[width]" style={{ width: `${j.progress * 100}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 p-4">
+                    <p className="truncate font-display font-bold">{j.input_name.replace(/\.mp4$/i, "")}</p>
+                    <div className="flex flex-wrap justify-between gap-2 font-mono text-[0.7rem] text-muted">
+                      <span>{new Date(j.created_at).toLocaleString()}</span>
+                      <span>
+                        {j.total_duration_s > 0 && `${fmtDuration(j.total_duration_s)} · `}{fmtUsd(j.total_cost_usd)}
+                      </span>
+                    </div>
+                    {running && <p className="truncate font-mono text-[0.7rem] text-signal">▸ {j.stage} {j.message}</p>}
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </Card>
+    </div>
   );
 }

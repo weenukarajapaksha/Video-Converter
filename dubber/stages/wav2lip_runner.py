@@ -100,23 +100,40 @@ def detect_faces(args, device, active, n_frames) -> dict[int, tuple[int, int, in
         idxs.clear()
 
     i = 0
+    wanted: list[int] = []
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         if active(i):
-            batch.append(cv2.cvtColor(cv2.resize(frame, small), cv2.COLOR_BGR2RGB))
-            idxs.append(i)
-            if len(batch) == args.det_batch:
-                flush()
-                progress(0.4 * i / max(1, n_frames), "detecting faces")
+            wanted.append(i)
+            # Faces move little between adjacent frames: detect on every `det_stride`-th
+            # frame and fill the rest from neighbours (the detector is the bottleneck).
+            if i % args.det_stride == 0:
+                batch.append(cv2.cvtColor(cv2.resize(frame, small), cv2.COLOR_BGR2RGB))
+                idxs.append(i)
+                if len(batch) == args.det_batch:
+                    flush()
+                    progress(0.4 * i / max(1, n_frames), "detecting faces")
         i += 1
     flush()
     cap.release()
     del detector
     if device == "cuda":
         torch.cuda.empty_cache()
-    return smooth_boxes(boxes)
+    return smooth_boxes(fill_gaps(boxes, wanted, args.det_stride))
+
+
+def fill_gaps(boxes: dict[int, tuple], wanted: list[int], stride: int) -> dict[int, tuple]:
+    """Give undetected frames the box of the nearest detection within `stride` frames."""
+    out = dict(boxes)
+    for i in wanted:
+        if i in out:
+            continue
+        near = [j for j in range(i - stride, i + stride + 1) if j in boxes]
+        if near:
+            out[i] = boxes[min(near, key=lambda j: abs(j - i))]
+    return out
 
 
 def smooth_boxes(boxes: dict[int, tuple], radius: int = 2) -> dict[int, tuple]:
@@ -150,7 +167,8 @@ def main() -> None:
     p.add_argument("--fps", type=float, default=0.0)
     p.add_argument("--segments", default="", help="json [[start, end], ...] in seconds")
     p.add_argument("--batch", type=int, default=32)
-    p.add_argument("--det-batch", type=int, default=8)
+    p.add_argument("--det-batch", type=int, default=4)  # ~1.9 GB peak VRAM
+    p.add_argument("--det-stride", type=int, default=2)
     p.add_argument("--det-size", type=int, default=640)
     p.add_argument("--ffmpeg", default="ffmpeg")
     p.add_argument("--crf", default="18")

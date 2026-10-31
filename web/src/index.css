@@ -1,46 +1,180 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --color-ink-950: #07080d;
-  --color-ink-900: #0d0f17;
-  --color-ink-800: #151824;
-  --color-ink-700: #1f2333;
-  --color-ink-600: #2c3146;
+/* ---------------------------------------------------------------------------
+   DUB STUDIO design tokens. Dark-first (post-production suite); light theme is
+   a warm "script paper" variant. Toggle via html[data-theme], else follows OS.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+  --bg: #0b0c10;
+  --bg-glow: rgb(255 181 71 / 0.07);
+  --panel: #12141b;
+  --panel-2: #181b24;
+  --panel-3: #1f2330;
+  --line: rgb(255 255 255 / 0.07);
+  --line-strong: rgb(255 255 255 / 0.14);
+  --text: #ece9e2;
+  --muted: #8d919e;
+  --faint: #5b5f6c;
+  --signal: #ffb547; /* amber: VU / active signal */
+  --signal-ink: #1a1204;
+  --zh: #ff7a59; /* source track */
+  --en: #3ddbc4; /* dub track */
+  --ok: #5ee08a;
+  --warn: #ffc94a;
+  --bad: #ff5d6c;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 18px 40px -20px rgb(0 0 0 / 0.7);
+  --grid: rgb(255 255 255 / 0.035);
 }
 
-html {
-  color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f0e9;
+    --bg-glow: rgb(255 140 50 / 0.10);
+    --panel: #fffdf8;
+    --panel-2: #f7f3ea;
+    --panel-3: #ece6d9;
+    --line: rgb(30 25 15 / 0.09);
+    --line-strong: rgb(30 25 15 / 0.18);
+    --text: #1b1a17;
+    --muted: #6b6659;
+    --faint: #a39d8f;
+    --signal: #e8890c;
+    --signal-ink: #fffaf0;
+    --zh: #e2552f;
+    --en: #0f9c88;
+    --ok: #1f9d4d;
+    --warn: #c98a00;
+    --bad: #d63345;
+    --shadow: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 14px 30px -18px rgb(60 40 10 / 0.35);
+    --grid: rgb(30 25 15 / 0.045);
+  }
 }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f0e9;
+  --bg-glow: rgb(255 140 50 / 0.10);
+  --panel: #fffdf8;
+  --panel-2: #f7f3ea;
+  --panel-3: #ece6d9;
+  --line: rgb(30 25 15 / 0.09);
+  --line-strong: rgb(30 25 15 / 0.18);
+  --text: #1b1a17;
+  --muted: #6b6659;
+  --faint: #a39d8f;
+  --signal: #e8890c;
+  --signal-ink: #fffaf0;
+  --zh: #e2552f;
+  --en: #0f9c88;
+  --ok: #1f9d4d;
+  --warn: #c98a00;
+  --bad: #d63345;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 14px 30px -18px rgb(60 40 10 / 0.35);
+  --grid: rgb(30 25 15 / 0.045);
+}
+
+@theme inline {
+  --font-display: "Bricolage Grotesque", "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-zh: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Inter Tight", sans-serif;
+
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-3: var(--panel-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-zh: var(--zh);
+  --color-en: var(--en);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+}
+
+html, body { background: var(--bg); }
 
 body {
-  @apply bg-ink-950 text-slate-200 antialiased;
-  background-image:
-    radial-gradient(60rem 30rem at 10% -10%, rgb(99 102 241 / 0.12), transparent),
-    radial-gradient(50rem 30rem at 110% 10%, rgb(217 70 239 / 0.08), transparent);
-  background-attachment: fixed;
+  @apply font-sans text-text antialiased;
   min-height: 100vh;
+  background-image:
+    radial-gradient(70rem 32rem at 85% -12rem, var(--bg-glow), transparent 70%),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+  background-attachment: fixed;
 }
 
-@utility card {
-  @apply rounded-2xl border border-white/5 bg-ink-900/80 shadow-xl shadow-black/30 backdrop-blur;
+::selection { background: color-mix(in srgb, var(--signal) 35%, transparent); }
+
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 6px; }
+
+@utility panel {
+  @apply rounded-2xl border border-line bg-panel;
+  box-shadow: var(--shadow);
 }
 
-@utility input {
-  @apply w-full rounded-lg border border-white/10 bg-ink-800 px-3 py-2 text-sm text-slate-100
-    outline-none transition focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/20;
+@utility eyebrow {
+  @apply font-mono text-[0.68rem] font-medium uppercase tracking-[0.18em] text-muted;
+}
+
+@utility field {
+  @apply w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-text outline-none
+    transition placeholder:text-faint focus:border-signal/60 focus:ring-2 focus:ring-signal/20;
 }
 
 @utility btn {
-  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2
-    text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3.5 py-2
+    text-sm font-medium transition select-none disabled:cursor-not-allowed disabled:opacity-45;
 }
 
-@utility btn-primary {
-  @apply btn bg-linear-to-r from-indigo-500 to-fuchsia-500 text-white shadow-lg
-    shadow-indigo-500/20 hover:brightness-110;
+@utility btn-signal {
+  @apply btn bg-signal text-signal-ink hover:brightness-110 active:translate-y-px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 60%, black),
+    0 8px 24px -10px color-mix(in srgb, var(--signal) 70%, transparent);
 }
 
 @utility btn-ghost {
-  @apply btn border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10;
+  @apply btn border border-line bg-panel-2 text-text hover:border-line-strong hover:bg-panel-3;
 }
+
+@utility tc {
+  @apply font-mono tabular-nums;
+}
+
+/* --- motion ---------------------------------------------------------------- */
+@keyframes cable-flow { to { stroke-dashoffset: -24; } }
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 55%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--signal) 0%, transparent); }
+}
+@keyframes bar-bounce { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes swap-zh { 0%, 42% { opacity: 1; filter: blur(0); } 50%, 92% { opacity: 0; filter: blur(4px); } 100% { opacity: 1; filter: blur(0); } }
+@keyframes swap-en { 0%, 42% { opacity: 0; filter: blur(4px); } 50%, 92% { opacity: 1; filter: blur(0); } 100% { opacity: 0; filter: blur(4px); } }
+@keyframes tally { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.cable-live { stroke-dasharray: 6 6; animation: cable-flow 0.6s linear infinite; }
+.node-live { animation: node-pulse 1.6s ease-out infinite; }
+.wave-bar { transform-origin: center; animation: bar-bounce 1.2s ease-in-out infinite; }
+.rise-in { animation: rise-in 0.35s ease-out both; }
+.swap-zh { animation: swap-zh 6s ease-in-out infinite; }
+.swap-en { animation: swap-en 6s ease-in-out infinite; }
+.tally { animation: tally 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cable-live, .node-live, .wave-bar, .rise-in, .tally { animation: none !important; }
+  .swap-zh, .swap-en { animation: none !important; }
+  .swap-en { opacity: 0; }
+}
+
+/* thin scrollbars for the timeline */
+.scroll-thin { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }

@@ -15,7 +15,7 @@ from dubber.config import get_settings
 from dubber.pipeline.job import Job
 from dubber.pipeline.stage import ProgressFn, Stage
 from dubber.schemas import Gender, SpeakerProfile, Transcript, VoiceMap
-from dubber.stages.diarize import SR, load_mono_16k
+from dubber.stages.transcribe import SR, load_mono_16k
 
 GENDER_SPLIT_HZ = 160.0
 MAX_ANALYSIS_S = 40.0  # per speaker; plenty for a stable median

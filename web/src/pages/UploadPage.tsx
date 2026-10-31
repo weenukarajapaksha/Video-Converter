@@ -1,28 +1,37 @@
-import { AudioLines, FileVideo, Languages, Loader2, Sparkles, UploadCloud, Wand2 } from "lucide-react";
-import { useRef, useState, type DragEvent } from "react";
+import { AudioLines, Clapperboard, Languages, Loader2, Mic2, Sparkles, Wand2 } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { navigate } from "../App";
-import { api } from "../api";
-import { Card, ErrorNote, Toggle } from "../components/ui";
+import { api, fmtBytes, fmtTC } from "../api";
+import { HeroWave } from "../components/Brand";
+import { Chip, ErrorNote, Panel, PatchToggle } from "../components/ui";
 
 const LANGUAGES = ["English", "Spanish", "French", "German", "Japanese", "Korean", "Sinhala", "Hindi"];
+const MIN_S = 30;
+const MAX_S = 180;
 
-const FEATURES = [
-  { icon: AudioLines, title: "Keeps the soundtrack", text: "Demucs removes the Chinese voices while music and effects stay." },
-  { icon: Languages, title: "Context-aware translation", text: "Gemini translates the whole dialogue, idioms and tone, within each line's time budget." },
-  { icon: Wand2, title: "Timed to the picture", text: "Lines that run long are rewritten, then gently time-stretched to fit." },
+const PATH = [
+  { icon: AudioLines, title: "Separate", text: "Demucs lifts the Chinese voices off the music & effects bed." },
+  { icon: Mic2, title: "Listen", text: "Whisper + pyannote transcribe every line and tell speakers apart." },
+  { icon: Languages, title: "Adapt", text: "Gemini writes a natural English script that fits each line's timing, then critiques it." },
+  { icon: Wand2, title: "Perform", text: "Voices are cast per speaker, fitted to the picture and mixed back in." },
 ];
+
+interface Probe { duration: number; width: number; height: number }
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
+  const [probe, setProbe] = useState<Probe | null>(null);
   const [drag, setDrag] = useState(false);
   const [language, setLanguage] = useState("English");
-  const [provider, setProvider] = useState<"gemini" | "edge">("gemini");
+  const [provider, setProvider] = useState<"gemini" | "edge">("edge");
   const [review, setReview] = useState(true);
   const [lipsync, setLipsync] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const pick = (f: File | undefined) => {
     if (!f) return;
@@ -31,8 +40,8 @@ export default function UploadPage() {
       return;
     }
     setError(null);
+    setProbe(null);
     setFile(f);
-    if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(f));
   };
 
@@ -41,6 +50,8 @@ export default function UploadPage() {
     setDrag(false);
     pick(e.dataTransfer.files[0]);
   };
+
+  const durationOk = probe ? probe.duration >= MIN_S && probe.duration <= MAX_S : true;
 
   const submit = async () => {
     if (!file) return;
@@ -62,102 +73,144 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-      <div className="space-y-6">
-        <div className="pt-4">
-          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Dub a Chinese video into{" "}
-            <span className="bg-linear-to-r from-indigo-300 to-fuchsia-300 bg-clip-text text-transparent">natural {language}</span>
+    <div className="space-y-8">
+      <section className="grid items-center gap-8 pt-2 lg:grid-cols-[1.15fr_1fr]">
+        <div className="rise-in">
+          <span className="eyebrow">Session 01 · Mandarin → {language}</span>
+          <h1 className="mt-3 font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl">
+            Same scene.<br />
+            Same music.<br />
+            <span className="text-signal">New voice.</span>
           </h1>
-          <p className="mt-3 max-w-xl text-slate-400">
-            Upload a 30 s – 3 min MP4. The pipeline separates the dialogue, transcribes and identifies each speaker,
-            translates with full context, then re-voices every line timed to the picture.
+          <p className="mt-5 max-w-lg text-[0.95rem] leading-relaxed text-muted">
+            Drop in a Chinese video and the studio separates the dialogue, transcribes each speaker,
+            writes a timing-aware {language} script, re-voices every line and mixes it back over
+            the original soundtrack.
           </p>
         </div>
+        <HeroWave />
+      </section>
 
+      <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        {/* Film-slate drop zone */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={onDrop}
-          onClick={() => inputRef.current?.click()}
-          className={`card group grid min-h-72 cursor-pointer place-items-center border-2 border-dashed p-6 transition ${
-            drag ? "border-indigo-400 bg-indigo-500/10" : "border-white/10 hover:border-indigo-400/50"}`}
+          className={`panel overflow-hidden transition ${drag ? "ring-2 ring-signal" : ""}`}
         >
+          <div className="h-5"
+            style={{ background: "repeating-linear-gradient(-45deg, var(--text) 0 18px, var(--panel) 18px 36px)" }} />
+          <div className="grid grid-cols-2 border-b border-line font-mono text-[0.68rem] uppercase tracking-wider sm:grid-cols-4">
+            {[["Prod", "Dub Studio"], ["Roll", `ZH → ${language.slice(0, 2).toUpperCase()}`],
+              ["Scene", file ? file.name.replace(/\.mp4$/i, "") : "—"], ["Take", "01"]].map(([k, v]) => (
+              <div key={k} className="min-w-0 border-r border-line px-4 py-2.5 last:border-r-0">
+                <div className="text-faint">{k}</div>
+                <div className="truncate text-text">{v}</div>
+              </div>
+            ))}
+          </div>
+
           <input ref={inputRef} type="file" accept="video/mp4,.mp4" hidden
             onChange={(e) => pick(e.target.files?.[0])} />
+
           {preview && file ? (
-            <div className="w-full space-y-3" onClick={(e) => e.stopPropagation()}>
-              <video src={preview} controls className="aspect-video w-full rounded-xl bg-black" />
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex min-w-0 items-center gap-2 text-slate-300">
-                  <FileVideo className="size-4 shrink-0 text-indigo-300" />
-                  <span className="truncate">{file.name}</span>
-                  <span className="text-slate-500">{(file.size / 1e6).toFixed(1)} MB</span>
-                </span>
-                <button className="btn-ghost" onClick={() => inputRef.current?.click()}>Change</button>
+            <div className="space-y-3 p-4">
+              <video src={preview} controls playsInline
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  setProbe({ duration: v.duration, width: v.videoWidth, height: v.videoHeight });
+                }}
+                className="aspect-video w-full rounded-xl bg-black" />
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip>{fmtBytes(file.size)}</Chip>
+                {probe && <Chip>{probe.width}×{probe.height}</Chip>}
+                {probe && <Chip tone={durationOk ? "ok" : "bad"}>{fmtTC(probe.duration)}</Chip>}
+                {probe && <Chip tone={durationOk ? "ok" : "bad"}>
+                  {durationOk ? "✓ within 30 s – 3 min" : "✕ must be 30 s – 3 min"}</Chip>}
+                <button className="btn-ghost ml-auto" onClick={() => inputRef.current?.click()}>Replace</button>
               </div>
             </div>
           ) : (
-            <div className="text-center">
-              <span className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-400/30 transition group-hover:scale-105">
-                <UploadCloud className="size-7 text-indigo-300" />
+            <button type="button" onClick={() => inputRef.current?.click()}
+              className="group grid min-h-72 w-full cursor-pointer place-items-center p-8 text-center">
+              <span>
+                <span className="mx-auto mb-5 grid size-16 place-items-center rounded-2xl border border-line-strong bg-panel-2 transition group-hover:-rotate-6 group-hover:border-signal">
+                  <Clapperboard className="size-7 text-signal" />
+                </span>
+                <span className="block font-display text-xl font-bold">Drop your take here</span>
+                <span className="mt-1 block text-sm text-muted">MP4 · Mandarin dialogue · 30 seconds to 3 minutes</span>
+                <span className="mt-4 inline-block font-mono text-[0.7rem] tracking-wider text-faint">
+                  OR CLICK TO BROWSE
+                </span>
               </span>
-              <p className="font-medium text-slate-100">Drop an MP4 here or click to browse</p>
-              <p className="mt-1 text-sm text-slate-500">Mandarin dialogue · 30 seconds to 3 minutes</p>
-            </div>
+            </button>
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, text }) => (
-            <div key={title} className="card p-4">
-              <Icon className="mb-2 size-5 text-fuchsia-300" />
-              <p className="text-sm font-medium text-slate-100">{title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400">{text}</p>
+        {/* Patch bay */}
+        <Panel eyebrow="Patch bay" title="Session settings" icon={<Sparkles className="size-4" />} className="h-fit">
+          <div className="space-y-5">
+            <div>
+              <span className="eyebrow mb-2 block">Target language</span>
+              <div className="flex flex-wrap gap-1.5">
+                {LANGUAGES.map((l) => (
+                  <button key={l} type="button" onClick={() => setLanguage(l)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition ${l === language
+                      ? "border-signal bg-signal text-signal-ink" : "border-line bg-panel-2 text-muted hover:text-text"}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      <Card title="Dubbing options" icon={<Sparkles className="size-4 text-fuchsia-300" />} className="h-fit lg:mt-4">
-        <div className="space-y-4">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-400">Target language</span>
-            <select className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-              {LANGUAGES.map((l) => <option key={l}>{l}</option>)}
-            </select>
-          </label>
-
-          <div>
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-400">Voice engine</span>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ["gemini", "Gemini TTS", "Expressive, emotion-steerable"],
-                ["edge", "Edge Neural", "Free, no API key"],
-              ] as const).map(([id, name, hint]) => (
-                <button key={id} type="button" onClick={() => setProvider(id)}
-                  className={`rounded-xl border p-3 text-left transition ${provider === id
-                    ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-ink-800/60 hover:border-white/20"}`}>
-                  <span className="block text-sm font-medium text-slate-100">{name}</span>
-                  <span className="block text-xs text-slate-400">{hint}</span>
-                </button>
-              ))}
+            <div>
+              <span className="eyebrow mb-2 block">Voice engine</span>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["edge", "Edge Neural", "Free · unlimited"],
+                  ["gemini", "Gemini TTS", "Emotion-steerable"],
+                ] as const).map(([id, name, hint]) => (
+                  <button key={id} type="button" onClick={() => setProvider(id)} aria-pressed={provider === id}
+                    className={`rounded-xl border p-3 text-left transition ${provider === id
+                      ? "border-signal/60 bg-signal/8" : "border-line bg-panel-2 hover:border-line-strong"}`}>
+                    <span className="block text-sm font-semibold">{name}</span>
+                    <span className="block text-xs text-muted">{hint}</span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            <div className="space-y-2">
+              <PatchToggle code="REV" checked={review} onChange={setReview}
+                label="Review script before voicing" hint="Pause to edit lines & recast voices." />
+              <PatchToggle code="LIP" checked={lipsync} onChange={setLipsync}
+                label="AI lip sync" hint="Re-render mouths to match English. Slower." />
+            </div>
+
+            {error && <ErrorNote>{error}</ErrorNote>}
+
+            <button className="btn-signal w-full py-3 text-base" disabled={!file || busy || !durationOk} onClick={submit}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <span className="size-2 rounded-full bg-bad" />}
+              {busy ? "Uploading…" : "Roll — start dubbing"}
+            </button>
           </div>
+        </Panel>
+      </section>
 
-          <Toggle checked={review} onChange={setReview} label="Review translation before dubbing"
-            hint="Pause to edit lines and choose a voice for each speaker." />
-          <Toggle checked={lipsync} onChange={setLipsync} label="AI lip sync (beta)"
-            hint="Re-render mouth movements to match the English audio. Slower." />
-
-          {error && <ErrorNote>{error}</ErrorNote>}
-
-          <button className="btn-primary w-full py-3" disabled={!file || busy} onClick={submit}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
-            {busy ? "Uploading…" : "Start dubbing"}
-          </button>
-        </div>
-      </Card>
+      <section>
+        <div className="eyebrow mb-3">Signal path</div>
+        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {PATH.map(({ icon: Icon, title, text }, i) => (
+            <li key={title} className="panel relative p-4">
+              <span className="tc absolute right-4 top-4 text-[0.7rem] text-faint">0{i + 1}</span>
+              <Icon className="mb-3 size-5 text-signal" />
+              <p className="font-display font-bold">{title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }

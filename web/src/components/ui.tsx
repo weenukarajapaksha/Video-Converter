@@ -1,100 +1,125 @@
+import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
 import type { JobState } from "../api";
 
-const SPEAKER_COLORS = [
-  "bg-sky-500/15 text-sky-300 ring-sky-400/30",
-  "bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-400/30",
-  "bg-amber-500/15 text-amber-300 ring-amber-400/30",
-  "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
-  "bg-rose-500/15 text-rose-300 ring-rose-400/30",
-  "bg-violet-500/15 text-violet-300 ring-violet-400/30",
-];
+// Speaker palette: mid-saturation hues that read on both the dark and paper themes.
+const SPEAKER_HEX = ["#5aa9ff", "#ff7a9c", "#c58bff", "#ffb547", "#3ddbc4", "#9ad85a"];
 
-export function speakerColor(speaker: string) {
+export function speakerHex(speaker: string) {
   const n = parseInt(speaker.replace(/\D/g, ""), 10);
-  return SPEAKER_COLORS[(Number.isNaN(n) ? 0 : n) % SPEAKER_COLORS.length];
+  return SPEAKER_HEX[((Number.isNaN(n) ? 1 : n) - 1 + SPEAKER_HEX.length) % SPEAKER_HEX.length];
 }
 
-export function SpeakerChip({ speaker }: { speaker: string }) {
-  const label = speaker.replace("SPEAKER_", "S");
+export const speakerLabel = (speaker: string) => speaker.replace("SPEAKER_", "S");
+
+export function SpeakerTag({ speaker, size = "sm" }: { speaker: string; size?: "sm" | "lg" }) {
+  const color = speakerHex(speaker);
+  const dim = size === "lg" ? "size-10 text-sm" : "size-6 text-[0.65rem]";
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${speakerColor(speaker)}`}>
-      {label}
+    <span
+      className={`inline-grid shrink-0 place-items-center rounded-full font-mono font-semibold ${dim}`}
+      style={{ background: `${color}22`, color, boxShadow: `inset 0 0 0 1.5px ${color}88` }}
+      title={speaker}
+    >
+      {speakerLabel(speaker)}
     </span>
   );
 }
 
-const STATE_STYLES: Record<JobState, string> = {
-  queued: "bg-slate-500/15 text-slate-300 ring-slate-400/30",
-  running: "bg-indigo-500/15 text-indigo-300 ring-indigo-400/30",
-  awaiting_review: "bg-amber-500/15 text-amber-300 ring-amber-400/30",
-  done: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
-  failed: "bg-rose-500/15 text-rose-300 ring-rose-400/30",
-  idle: "bg-slate-500/15 text-slate-400 ring-slate-400/20",
-};
-
-export function StateBadge({ state }: { state: JobState }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${STATE_STYLES[state]}`}>
-      {state === "running" && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
-      {state.replace("_", " ")}
-    </span>
-  );
-}
-
-export function Card({ title, icon, actions, children, className = "" }: {
-  title?: ReactNode; icon?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
+export function Panel({ title, eyebrow, icon, actions, children, className = "", bodyClass = "p-5" }: {
+  title?: ReactNode; eyebrow?: string; icon?: ReactNode; actions?: ReactNode; children: ReactNode;
+  className?: string; bodyClass?: string;
 }) {
   return (
-    <section className={`card p-5 ${className}`}>
+    <section className={`panel ${className}`}>
       {(title || actions) && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-slate-100">
-            {icon}{title}
-          </h2>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {icon && <span className="text-signal">{icon}</span>}
+            <div className="min-w-0">
+              {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+              {title && <h2 className="truncate font-display text-base font-bold tracking-tight">{title}</h2>}
+            </div>
+          </div>
           {actions}
-        </div>
+        </header>
       )}
-      {children}
+      <div className={bodyClass}>{children}</div>
     </section>
   );
 }
 
-export function ProgressBar({ value, tone = "indigo" }: { value: number; tone?: "indigo" | "emerald" | "rose" }) {
-  const colors = {
-    indigo: "from-indigo-500 to-fuchsia-500",
-    emerald: "from-emerald-500 to-teal-400",
-    rose: "from-rose-500 to-orange-400",
-  }[tone];
-  return (
-    <div className="h-2 overflow-hidden rounded-full bg-white/5">
-      <div className={`h-full rounded-full bg-linear-to-r ${colors} transition-[width] duration-500`}
-        style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` }} />
-    </div>
-  );
-}
+const STATE_STYLE: Record<JobState, { label: string; color: string; live?: boolean }> = {
+  queued: { label: "Queued", color: "var(--muted)" },
+  running: { label: "On air", color: "var(--signal)", live: true },
+  awaiting_review: { label: "Review", color: "var(--warn)" },
+  done: { label: "Mastered", color: "var(--ok)" },
+  failed: { label: "Failed", color: "var(--bad)" },
+  idle: { label: "Idle", color: "var(--muted)" },
+};
 
-export function Toggle({ checked, onChange, label, hint }: {
-  checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string;
-}) {
+export function StatusPill({ state }: { state: JobState }) {
+  const s = STATE_STYLE[state] ?? STATE_STYLE.idle;
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-white/5 bg-ink-800/60 p-3">
-      <span>
-        <span className="block text-sm font-medium text-slate-100">{label}</span>
-        {hint && <span className="mt-0.5 block text-xs text-slate-400">{hint}</span>}
-      </span>
-      <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-indigo-500" : "bg-ink-600"}`}>
-        <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${checked ? "left-5.5" : "left-0.5"}`} />
-      </button>
-    </label>
+    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[0.68rem] font-medium uppercase tracking-wider"
+      style={{ color: s.color, borderColor: `color-mix(in srgb, ${s.color} 40%, transparent)`,
+               background: `color-mix(in srgb, ${s.color} 10%, transparent)` }}>
+      <span className={`size-1.5 rounded-full ${s.live ? "tally" : ""}`} style={{ background: s.color }} />
+      {s.label}
+    </span>
   );
 }
 
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-      {children}
+    <div role="alert" className="flex gap-2 rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <div className="min-w-0 break-words">{children}</div>
     </div>
+  );
+}
+
+/** A studio "patch" switch: a labelled toggle with an LED. */
+export function PatchToggle({ checked, onChange, label, hint, code }: {
+  checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; code: string;
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+      className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+        checked ? "border-signal/50 bg-signal/8" : "border-line bg-panel-2 hover:border-line-strong"}`}>
+      <span className="grid w-11 shrink-0 place-items-center gap-1">
+        <span className="size-2 rounded-full transition"
+          style={{ background: checked ? "var(--signal)" : "var(--faint)",
+                   boxShadow: checked ? "0 0 10px var(--signal)" : "none" }} />
+        <span className="font-mono text-[0.6rem] tracking-wider text-muted">{code}</span>
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        {hint && <span className="block text-xs text-muted">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
+export function Stat({ label, value, sub, accent }: {
+  label: string; value: ReactNode; sub?: ReactNode; accent?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-panel-2 p-3.5">
+      <div className="eyebrow">{label}</div>
+      <div className="mt-1.5 font-display text-2xl font-bold tracking-tight tc"
+        style={accent ? { color: accent } : undefined}>{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+export function Chip({ children, tone }: { children: ReactNode; tone?: "ok" | "bad" | "signal" }) {
+  const color = tone ? `var(--${tone})` : undefined;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-line bg-panel-2 px-2 py-1 font-mono text-[0.7rem] text-muted"
+      style={color ? { color, borderColor: `color-mix(in srgb, ${color} 35%, transparent)` } : undefined}>
+      {children}
+    </span>
   );
 }

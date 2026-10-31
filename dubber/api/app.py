@@ -49,6 +49,7 @@ class JobSummary(BaseModel):
     error: str | None = None
     options: dict
     artifacts: list[str]
+    artifact_sizes: dict[str, int] = {}
     stages: dict
     total_duration_s: float
     total_cost_usd: float
@@ -82,6 +83,9 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         meta = (job.read_model(artifacts.METADATA, VideoMetadata)
                 if job.path(artifacts.METADATA).exists() else None)
         done = mgr.state(job) == "done"
+        # Sizes ride along with the summary so the UI needn't make a request per file
+        # (browsers cap connections per host; SSE + video streams already hold several).
+        sizes = {n: job.path(n).stat().st_size for n in DOWNLOADABLE if job.path(n).is_file()}
         return JobSummary(
             job_id=m.job_id, input_name=m.input_name, created_at=m.created_at.isoformat(),
             state=mgr.state(job),
@@ -90,7 +94,7 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             message=live.message if live else "",
             error=api_state.get("error"),
             options=m.options,
-            artifacts=sorted(n for n in DOWNLOADABLE if job.path(n).is_file()),
+            artifacts=sorted(sizes), artifact_sizes=sizes,
             stages={k: v.model_dump(mode="json") for k, v in m.stages.items()},
             total_duration_s=m.total_duration_s, total_cost_usd=m.total_cost_usd,
             metadata=meta,

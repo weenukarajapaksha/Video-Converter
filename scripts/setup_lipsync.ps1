@@ -1,6 +1,6 @@
 # Sets up the isolated Wav2Lip environment used by the optional `lipsync` stage.
 #   powershell -ExecutionPolicy Bypass -File scripts\setup_lipsync.ps1
-# Creates: third_party\Wav2Lip (pinned commit + checkpoints) and .venv-lipsync (Python 3.11).
+# Creates: third_party\Wav2Lip (pinned commit + checkpoints) and .venv-lipsync (Python 3.12).
 # Native tools (git, pip) write progress to stderr, so check exit codes explicitly.
 $ErrorActionPreference = "Continue"
 function Assert-Ok($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed ($LASTEXITCODE)" } }
@@ -18,12 +18,13 @@ if ($LASTEXITCODE -ne 0) { git -C $Repo fetch -q --depth 1 origin $Commit 2>&1 |
 git -C $Repo checkout -q $Commit 2>&1 | Out-Null; Assert-Ok "git checkout"
 
 if (-not (Test-Path (Join-Path $Venv "Scripts\python.exe"))) {
-    py -3.11 -m venv $Venv; Assert-Ok "venv"
+    # Same Python/torch as the main env, so pip reuses the cached CUDA wheel.
+    py -3.12 -m venv $Venv; Assert-Ok "venv"
 }
 $Py = Join-Path $Venv "Scripts\python.exe"
 & $Py -m pip install -q --upgrade pip; Assert-Ok "pip upgrade"
 & $Py -m pip install -q torch==2.7.1 --index-url $TorchIndex; Assert-Ok "torch install"
-& $Py -m pip install -q "numpy<2.3" opencv-python-headless==4.10.0.84 librosa==0.10.2.post1 scipy
+& $Py -m pip install -q "numpy<2.3" opencv-python-headless==4.10.0.84 librosa==0.10.2.post1 scipy tqdm
 Assert-Ok "deps install"
 
 $Downloads = @{
@@ -35,7 +36,10 @@ foreach ($rel in $Downloads.Keys) {
     if (-not (Test-Path $dst)) {
         New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
         Write-Host "downloading $rel"
-        curl.exe -sSL --fail -o $dst $Downloads[$rel]; Assert-Ok "download $rel"
+        # Resumable into a .part file so an interrupted download never looks complete.
+        curl.exe -sSL --fail --retry 10 --retry-all-errors -C - -o "$dst.part" $Downloads[$rel]
+        Assert-Ok "download $rel"
+        Move-Item -Force "$dst.part" $dst
     }
 }
 

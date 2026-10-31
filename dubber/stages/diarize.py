@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
-import soundfile as sf
-
 from dubber import ml
 from dubber.align import Turn, assign_speakers
 from dubber.artifacts import TRANSCRIPT, VOCALS
@@ -15,20 +12,32 @@ from dubber.errors import DubberError
 from dubber.pipeline.job import Job
 from dubber.pipeline.stage import ProgressFn, Stage
 from dubber.schemas import Transcript
-from dubber.stages.transcribe import TranscribeStage
+from dubber.stages.transcribe import SR, TranscribeStage, load_mono_16k
 
 log = logging.getLogger(__name__)
 
 DIARIZATION = "diarization.json"
 PIPELINE_ID = "pyannote/speaker-diarization-3.1"
-SR = 16000
 
 
-def load_mono_16k(path) -> np.ndarray:
-    import librosa
+def _hf_hub_compat() -> None:
+    """pyannote 3.x passes ``use_auth_token=`` to ``hf_hub_download``; huggingface_hub
+    >= 1.0 only accepts ``token=``. Translate the argument instead of pinning an old
+    hub version that the other ML libraries (faster-whisper, tokenizers) have outgrown.
+    Must run before pyannote is imported, since it binds the function at import time."""
+    import huggingface_hub
 
-    audio, sr = sf.read(path, dtype="float32", always_2d=True)
-    return librosa.resample(audio.mean(axis=1), orig_sr=sr, target_sr=SR)
+    original = huggingface_hub.hf_hub_download
+    if getattr(original, "_dubber_compat", False):
+        return
+
+    def hf_hub_download(*args, use_auth_token=None, **kwargs):
+        if use_auth_token is not None:
+            kwargs.setdefault("token", use_auth_token)
+        return original(*args, **kwargs)
+
+    hf_hub_download._dubber_compat = True
+    huggingface_hub.hf_hub_download = hf_hub_download
 
 
 class DiarizeStage(Stage):
@@ -48,12 +57,12 @@ class DiarizeStage(Stage):
         progress(1.0, f"{len(transcript.speakers)} speaker(s), {len(lines)} lines")
 
     def _diarize(self, job: Job, progress: ProgressFn) -> list[Turn]:
-        import torch
-        from pyannote.audio import Pipeline as PyannotePipeline
-
         token = get_settings().hf_token
         if not token:
             raise DubberError("HF_TOKEN is not set - required for pyannote diarization")
+        _hf_hub_compat()
+        import torch
+        from pyannote.audio import Pipeline as PyannotePipeline
 
         audio = load_mono_16k(job.path(VOCALS))
         with ml.gpu_scope():

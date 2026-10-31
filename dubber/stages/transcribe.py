@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
+import soundfile as sf
+
 from dubber import ml
 from dubber.artifacts import TRANSCRIPT, VOCALS
 from dubber.config import get_settings
@@ -12,6 +15,15 @@ from dubber.pipeline.stage import ProgressFn, Stage
 from dubber.schemas import Segment, Transcript, Word
 
 RAW_TRANSCRIPT = "transcript_raw.json"  # pre-diarization ASR output
+SR = 16000  # Whisper, pyannote and pitch analysis all work at 16 kHz mono
+
+
+def load_mono_16k(path) -> np.ndarray:
+    """Decode with libsndfile and resample ourselves (avoids PyAV version pitfalls)."""
+    import librosa
+
+    audio, sr = sf.read(path, dtype="float32", always_2d=True)
+    return librosa.resample(audio.mean(axis=1), orig_sr=sr, target_sr=SR)
 
 # Priming with simplified-Chinese, punctuated text steers Whisper towards simplified
 # characters and proper sentence punctuation (it otherwise often omits both).
@@ -45,12 +57,13 @@ class TranscribeStage(Stage):
 
         settings = get_settings()
         dev = ml.device()
+        audio = load_mono_16k(job.path(VOCALS))
         with ml.gpu_scope():
             progress(0.02, f"loading whisper {settings.whisper_model}")
             model = WhisperModel(settings.whisper_model, device=dev,
                                  compute_type="int8_float16" if dev == "cuda" else "int8")
             segments_iter, info = model.transcribe(
-                str(job.path(VOCALS)),
+                audio,
                 language="zh",
                 beam_size=5,
                 vad_filter=True,
