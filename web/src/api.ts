@@ -156,6 +156,23 @@ export interface Report {
   realtime_factor: number | null;
 }
 
+export const LOW_CONFIDENCE = 0.6;
+
+export interface QualityWarning { level: "info" | "warn" | "bad"; message: string }
+
+export interface Quality {
+  warnings: QualityWarning[];
+  asr?: {
+    segments: number; mean_confidence: number | null; speech_ratio: number | null;
+    low_confidence: { id: number; confidence: number; text: string }[];
+    vad_speech_regions?: number; recovered_regions?: number;
+  };
+  speakers?: { count: number; genders: Record<"male" | "female" | "unknown", number> };
+  sync?: { lines: number; stretched: number; max_tempo: number; rewritten: number;
+           overflow: { id: number; by_s: number }[] };
+  translation?: { accuracy: number; naturalness: number; tone: number; revisions: number };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
@@ -192,6 +209,7 @@ export const api = {
   voiceCatalog: (provider: string) =>
     request<VoiceOption[]>(`/api/voices?provider=${encodeURIComponent(provider)}`),
   report: (id: string) => request<Report>(`/api/jobs/${id}/report`),
+  quality: (id: string) => request<Quality>(`/api/jobs/${id}/quality`),
   fileUrl: (id: string, name: string, download = false) =>
     `/api/jobs/${id}/files/${name}${download ? "?download=true" : ""}`,
   events: (id: string) => new EventSource(`/api/jobs/${id}/events`),

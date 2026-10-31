@@ -16,6 +16,10 @@ models/
 third_party/
 .venv-lipsync/
 
+# generated test scenarios (rebuild with scripts/make_scenarios.py)
+samples/scenarios/*.mp4
+
 # frontend
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo

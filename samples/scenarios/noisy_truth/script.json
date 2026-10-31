@@ -1,0 +1,47 @@
+{
+  "duration_s": 32.268,
+  "lines": [
+    {
+      "start": 1.5,
+      "end": 6.516,
+      "text": "喂，你能听见我说话吗？这边信号不太好。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 7.116,
+      "end": 11.292,
+      "text": "能听见，但是有点杂音，你现在在哪儿呢？",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 11.892,
+      "end": 15.996,
+      "text": "我在火车站，外面人特别多，特别吵。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 16.596,
+      "end": 20.1,
+      "text": "那你几点到？我去车站接你。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 20.7,
+      "end": 24.444,
+      "text": "大概晚上八点半，到了我再给你打电话。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 25.044,
+      "end": 29.268,
+      "text": "好的，路上注意安全，到了记得给我发消息。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    }
+  ]
+}

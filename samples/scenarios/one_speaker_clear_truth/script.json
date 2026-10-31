@@ -1,0 +1,47 @@
+{
+  "duration_s": 37.2,
+  "lines": [
+    {
+      "start": 1.5,
+      "end": 4.5,
+      "text": "大家好，欢迎来到我们的节目。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 5.3,
+      "end": 10.964,
+      "text": "今天我想和大家聊一聊，怎样在忙碌的生活中照顾好自己。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 11.764,
+      "end": 17.068,
+      "text": "首先，每天一定要保证充足的睡眠，至少七个小时。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 17.768,
+      "end": 23.576,
+      "text": "其次，饮食要均衡，多吃蔬菜和水果，少吃油炸食品。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 24.276,
+      "end": 29.46,
+      "text": "最后，别忘了每周运动三次，哪怕只是散散步也好。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 30.26,
+      "end": 34.7,
+      "text": "希望这些小建议对你有帮助，我们下期再见。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    }
+  ]
+}

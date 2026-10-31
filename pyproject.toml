@@ -24,6 +24,8 @@ ml = [
     "pyannote.audio>=3.3,<4",
     "demucs>=4.0.1",
     "librosa>=0.10",
+    "zhconv>=1.4",
+    "filelock>=3.12",
 ]
 ai = [
     "google-genai>=1.20",

@@ -17,7 +17,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from dubber import media
+from dubber import media, ml
 from dubber.artifacts import DUB_MIX, DUB_TRACK, DUB_VOICE, LIPSYNC_VIDEO, OUTPUT_VIDEO
 from dubber.errors import DubberError, MediaError
 from dubber.pipeline.job import Job
@@ -90,7 +90,8 @@ class LipSyncStage(Stage):
 
         frames = job.path(FRAMES_TMP)
         cmd = build_command(python, repo, video, speech, frames, meta.fps, segments)
-        result = self._run_runner(cmd, progress)
+        with ml.gpu_scope():  # never overlap other GPU work on a 4 GB card
+            result = self._run_runner(cmd, progress)
         job.write_json("lipsync_stats.json", result)
 
         progress(0.98, "muxing audio")

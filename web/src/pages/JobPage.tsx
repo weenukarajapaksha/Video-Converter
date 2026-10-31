@@ -4,6 +4,7 @@ import { api, fmtDuration, fmtTC, type DubTrack, type JobSummary, type PipelineE
   type Transcript, type Translation } from "../api";
 import Monitor from "../components/Monitor";
 import QACard from "../components/QACard";
+import QualityPanel from "../components/QualityPanel";
 import { ReportCard, Tapes } from "../components/Results";
 import ScriptEditor from "../components/ScriptEditor";
 import SignalChain, { VuMeter } from "../components/SignalChain";
@@ -87,6 +88,7 @@ export default function JobPage({ jobId }: { jobId: string }) {
   const hasTranslation = job.artifacts.includes("translation.json");
   const hasOutput = job.artifacts.includes("output.mp4");
   const showEditor = job.state === "awaiting_review" || (editing && hasTranslation && !running);
+  const showQA = Boolean(translation?.review && hasOutput);
   const m = job.metadata;
   const opts = job.options as Record<string, string | boolean | undefined>;
 
@@ -192,10 +194,12 @@ export default function JobPage({ jobId }: { jobId: string }) {
       {running && !hasOutput && <OnAir log={log} live={live} />}
 
       {!showEditor && (
-        <div className="grid gap-6 xl:grid-cols-2">
-          {translation?.review && hasOutput ? <QACard translation={translation} /> : null}
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          {showQA && <QACard translation={translation!} />}
+          <QualityPanel job={job} />
           <ReportCard job={job} />
-          <div className="xl:col-span-2"><Tapes job={job} /></div>
+          {/* 4 panels tile 2x2; with 3, the tape library takes the full last row */}
+          <div className={showQA ? "" : "xl:col-span-2"}><Tapes job={job} /></div>
         </div>
       )}
     </div>

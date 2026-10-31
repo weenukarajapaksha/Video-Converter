@@ -137,7 +137,8 @@ def _request(model: str, system: str, prompt: str, ids: set[int],
             break
         suffix = "" if not got else (f"\n\nYou skipped ids {sorted(missing)}. "
                                      "Return ONLY those ids.")
-        parsed = llm.generate(model, system, prompt + suffix, LinesOut, usage)
+        # Low thinking for draft/shorten calls (latency); the critic pass reasons fully.
+        parsed = llm.generate(model, system, prompt + suffix, LinesOut, usage, thinking="low")
         for line in parsed.lines:
             if line.id in missing and line.text.strip():
                 emotion = line.emotion.lower().strip()

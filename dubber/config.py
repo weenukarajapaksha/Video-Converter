@@ -24,7 +24,11 @@ class Settings(BaseSettings):
     min_duration_s: float = 30.0
     max_duration_s: float = 180.0
 
+    separation_model: str = "htdemucs_ft"
     whisper_model: str = "large-v3"
+    # Batched decoding is ~3x faster on long videos but decodes chunks without
+    # cross-chunk context; sequential + coverage recovery is the accuracy default.
+    asr_batched: bool = False
     translation_model: str = "gemini-3.8-flash"
     tts_model: str = "gemini-3.8-flash-tts"
     # Edge is free and unlimited; Gemini TTS is more expressive but its free tier

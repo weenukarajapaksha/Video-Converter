@@ -1,6 +1,6 @@
 import { FileText, Loader2, Mars, Play, Save, Users, Venus, VenusAndMars } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api, fmtTC, type Translation, type VoiceMap, type VoiceOption } from "../api";
+import { LOW_CONFIDENCE, api, fmtTC, type Translation, type VoiceMap, type VoiceOption } from "../api";
 import { ErrorNote, Panel, SpeakerTag, speakerHex } from "./ui";
 
 const EMOTIONS = ["neutral", "happy", "excited", "sad", "angry", "surprised", "fearful",
@@ -38,9 +38,13 @@ export default function ScriptEditor({ jobId, onGenerated }: { jobId: string; on
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     api.translation(jobId).then(setTranslation).catch((e) => setError(e.message));
+    api.transcript(jobId).then((t) => setConfidence(new Map(
+      t.segments.filter((s) => s.confidence !== null).map((s) => [s.id, s.confidence!]))))
+      .catch(() => { /* confidence markers are optional */ });
     api.voices(jobId).then((v) => {
       setVoices(v);
       return api.voiceCatalog(v.provider).then(setCatalog);
@@ -153,6 +157,8 @@ export default function ScriptEditor({ jobId, onGenerated }: { jobId: string; on
         <ol className="space-y-3">
           {translation.segments.map((s) => {
             const est = estimateSeconds(s.text);
+            const conf = confidence.get(s.id);
+            const low = conf !== undefined && conf < LOW_CONFIDENCE;
             return (
               <li key={s.id} className="grid gap-3 rounded-xl border border-line bg-panel-2 p-3.5 md:grid-cols-[8.5rem_1fr_9.5rem]"
                 style={{ boxShadow: `inset 3px 0 0 ${speakerHex(s.speaker)}` }}>
@@ -163,7 +169,12 @@ export default function ScriptEditor({ jobId, onGenerated }: { jobId: string; on
                   </div>
                 </div>
                 <div className="min-w-0 space-y-2">
-                  <p className="font-zh text-[0.95rem] leading-relaxed text-zh">{s.source_text}</p>
+                  <p className={`font-zh text-[0.95rem] leading-relaxed text-zh ${low ? "low-conf" : ""}`}
+                    title={conf !== undefined ? `ASR confidence ${conf.toFixed(2)}` : undefined}>
+                    {s.source_text}
+                    {low && <span className="ml-2 align-middle font-mono text-[0.65rem] text-warn">
+                      ASR {conf!.toFixed(2)} · check</span>}
+                  </p>
                   <textarea className="field min-h-[3.25rem] resize-y text-[0.95rem] leading-relaxed" value={s.text}
                     aria-label={`English line ${s.id}`}
                     onChange={(e) => editSegment(s.id, { text: e.target.value })} />

@@ -30,7 +30,8 @@ function useVideoClock(ref: RefObject<HTMLVideoElement | null>, src: string) {
 export function buildTracks(transcript: Transcript | null, translation: Translation | null,
                             dub: DubTrack | null): { zh: ZhBlock[]; en: EnBlock[] } {
   const zh: ZhBlock[] = (transcript?.segments ?? []).map((s) => ({
-    id: s.id, start: s.start, end: s.end, speaker: s.speaker, text: s.text }));
+    id: s.id, start: s.start, end: s.end, speaker: s.speaker, text: s.text,
+    confidence: s.confidence }));
   const byId = new Map((translation?.segments ?? []).map((s) => [s.id, s]));
   const en: EnBlock[] = dub
     ? dub.lines.map((l) => {

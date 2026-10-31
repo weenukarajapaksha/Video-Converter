@@ -44,6 +44,32 @@ def test_long_pause_splits_same_speaker():
     assert [ln.text for ln in lines] == ["好的。", "走吧"]
 
 
+def test_speaker_change_one_syllable_off_snaps_to_punctuation():
+    # Real case: diarization switched speaker one syllable late -> "回去？回 | 中国".
+    seg = Segment(id=0, start=19.9, end=23.0, text="回去？回中国，", words=words(
+        (19.9, 20.4, "回去？"), (20.6, 20.9, "回"), (21.1, 21.6, "中国，")))
+    turns = [Turn(19.8, 20.95, "B"), Turn(20.95, 23.0, "A")]
+    lines = assign_speakers([seg], turns)
+    assert [ln.text for ln in lines] == ["回去？", "回中国，"]
+
+
+def test_stray_fragment_is_merged_into_following_line_of_same_speaker():
+    # Real case: a bad word timestamp left "日本" 2 s before "学者断言…".
+    segs = [Segment(id=0, start=7.0, end=7.4, text="日本", words=words((7.0, 7.4, "日本"))),
+            Segment(id=1, start=9.6, end=12.0, text="学者断言。", words=words(
+                (9.6, 10.5, "学者"), (10.5, 12.0, "断言。")))]
+    lines = assign_speakers(segs, [Turn(6.9, 12.1, "A")])
+    assert [(ln.start, ln.text) for ln in lines] == [(7.0, "日本学者断言。")]
+
+
+def test_uncovered_speech_finds_regions_asr_skipped():
+    from dubber.align import uncovered_speech
+
+    segs = [Segment(id=0, start=0.0, end=6.8, text="a"), Segment(id=1, start=34.6, end=50, text="b")]
+    speech = [(0.0, 7.0), (9.5, 34.0), (34.5, 50.0), (51.0, 51.3)]
+    assert uncovered_speech(speech, segs) == [(9.5, 34.0)]  # short blip ignored
+
+
 def test_budgets_extend_into_silence_but_not_into_next_line():
     segs = [
         Segment(id=0, start=1.0, end=2.0, text="a"),  # next line starts at 2.5

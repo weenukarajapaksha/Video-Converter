@@ -56,6 +56,98 @@ class JobSummary(BaseModel):
     metadata: VideoMetadata | None = None
 
 
+LOW_CONFIDENCE = 0.6
+OVERFLOW_TOLERANCE_S = 0.05
+
+
+def _read_json(job: Job, name: str):
+    path = job.path(name)
+    return json.loads(path.read_text("utf-8")) if path.is_file() else None
+
+
+def build_quality(job: Job) -> dict:
+    """Aggregate per-job quality signals and turn them into human-readable warnings.
+
+    Every source file is optional: whatever exists so far is reported.
+    """
+    out: dict = {"warnings": []}
+    warn = out["warnings"].append
+
+    asr = _read_json(job, "asr_stats.json")
+    transcript = _read_json(job, artifacts.TRANSCRIPT)
+    if transcript is not None:
+        segs = transcript.get("segments", [])
+        low = [{"id": s["id"], "confidence": s["confidence"], "text": s["text"]}
+               for s in segs
+               if s.get("confidence") is not None and s["confidence"] < LOW_CONFIDENCE]
+        confs = [s["confidence"] for s in segs if s.get("confidence") is not None]
+        out["asr"] = {
+            "segments": len(segs),
+            "mean_confidence": round(sum(confs) / len(confs), 3) if confs else None,
+            "low_confidence": low,
+            "speech_ratio": transcript.get("speech_ratio"),
+        }
+        if asr:
+            out["asr"]["vad_speech_regions"] = asr.get("vad_speech_regions")
+            out["asr"]["recovered_regions"] = asr.get("recovered_regions", 0)
+        if low:
+            warn({"level": "warn", "message":
+                  f"{len(low)} line(s) have low ASR confidence (<{LOW_CONFIDENCE}) - "
+                  "check them in the script editor"})
+        if asr and asr.get("recovered_regions"):
+            warn({"level": "info", "message":
+                  f"Recovered {asr['recovered_regions']} speech region(s) Whisper skipped "
+                  "on the first pass"})
+        if not segs:
+            warn({"level": "info", "message": "No speech detected - nothing was dubbed"})
+
+    voices = _read_json(job, artifacts.VOICES)
+    if voices is not None:
+        speakers = list(voices.get("speakers", {}).values())
+        out["speakers"] = {
+            "count": len(speakers),
+            "genders": {g: sum(1 for s in speakers if s.get("gender") == g)
+                        for g in ("male", "female", "unknown")},
+        }
+        if len(speakers) >= 4:
+            warn({"level": "warn", "message":
+                  f"{len(speakers)} speakers detected - if fewer people speak, remap voices "
+                  "so each person keeps one voice"})
+
+    track = _read_json(job, artifacts.DUB_TRACK)
+    translation = _read_json(job, artifacts.TRANSLATION)
+    if track is not None:
+        budgets = ({s["id"]: s["max_duration_s"] for s in translation.get("segments", [])}
+                   if translation else {})
+        lines = track.get("lines", [])
+        overflow = [{"id": ln["id"], "by_s": round(ln["final_duration_s"] - budgets[ln["id"]], 3)}
+                    for ln in lines if ln["id"] in budgets
+                    and ln["final_duration_s"] > budgets[ln["id"]] + OVERFLOW_TOLERANCE_S]
+        out["sync"] = {
+            "lines": len(lines),
+            "stretched": sum(1 for ln in lines if ln.get("tempo", 1.0) > 1.0),
+            "max_tempo": max((ln.get("tempo", 1.0) for ln in lines), default=1.0),
+            "rewritten": sum(1 for ln in lines if ln.get("rewrites")),
+            "overflow": overflow,
+        }
+        if overflow:
+            worst = max(o["by_s"] for o in overflow)
+            warn({"level": "bad", "message":
+                  f"{len(overflow)} line(s) still overflow their slot (worst by {worst:.2f}s)"})
+
+    if translation and translation.get("review"):
+        r = translation["review"]
+        out["translation"] = {"accuracy": r["accuracy"], "naturalness": r["naturalness"],
+                              "tone": r["tone"], "revisions": len(r.get("issues", []))}
+        if min(r["accuracy"], r["naturalness"], r["tone"]) < 6:
+            warn({"level": "warn", "message":
+                  "The translation critic scored this script below 6/10 - review it"})
+    elif translation is not None:
+        warn({"level": "info", "message":
+              "Translation critic was skipped (API unavailable) - draft used as-is"})
+    return out
+
+
 def create_app(manager: JobManager | None = None) -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Dubber", version="0.1.0",
@@ -277,6 +369,10 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             "cost_per_minute_usd": round(m.total_cost_usd / minutes, 6) if minutes else None,
             "realtime_factor": round(m.total_duration_s / meta.duration_s, 3) if meta else None,
         }
+
+    @app.get("/api/jobs/{job_id}/quality")
+    def get_quality(job: Job = Depends(get_job)):
+        return build_quality(job)
 
     @app.get("/api/voices")
     def list_voices(provider: Literal["gemini", "edge"] = "gemini"):

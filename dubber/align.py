@@ -72,6 +72,50 @@ def _smooth(labels: list[str | None], words: list[Word], min_run_s: float = 0.4)
     return out
 
 
+def _snap_to_punctuation(labels: list[str], words: list[Word], reach: int = 2) -> list[str]:
+    """Move each speaker change to a nearby punctuation mark.
+
+    Diarization boundaries are often a syllable off ("回去？回 | 中国"). People change
+    turns at clause/sentence ends, so a change within ``reach`` words of punctuation
+    is snapped to it ("回去？| 回中国").
+    """
+    out = list(labels)
+    for i in range(1, len(out)):
+        if out[i] == out[i - 1]:
+            continue
+        ends = [j for j in range(max(1, i - reach), min(len(words), i + reach + 1))
+                if SENTENCE_END.search(words[j - 1].text.strip())
+                or CLAUSE_END.search(words[j - 1].text.strip())]
+        if not ends:
+            continue
+        j = min(ends, key=lambda k: abs(k - i))
+        if j > i:  # previous speaker keeps talking up to the punctuation
+            out[i:j] = [out[i - 1]] * (j - i)
+        elif j < i:  # new speaker starts right after the punctuation
+            out[j:i] = [out[i]] * (i - j)
+    return out
+
+
+def _merge_fragments(lines: list[Segment], max_chars: int = 2,
+                     max_gap: float = 3.0) -> list[Segment]:
+    """Fold tiny fragments (e.g. a stray "日本" with a bad word timestamp) into the
+    following line of the same speaker, so they are translated in context."""
+    out: list[Segment] = []
+    i = 0
+    while i < len(lines):
+        cur = lines[i]
+        nxt = lines[i + 1] if i + 1 < len(lines) else None
+        core = re.sub(r"[\s，。？！、,.?!]", "", cur.text)
+        if (nxt and len(core) <= max_chars and not SENTENCE_END.search(cur.text)
+                and nxt.speaker == cur.speaker and nxt.start - cur.end <= max_gap):
+            lines[i + 1] = nxt.model_copy(update={
+                "start": cur.start, "text": cur.text + nxt.text, "words": cur.words + nxt.words})
+        else:
+            out.append(cur)
+        i += 1
+    return [s.model_copy(update={"id": n}) for n, s in enumerate(out)]
+
+
 def assign_speakers(segments: list[Segment], turns: list[Turn], max_gap: float = 0.8,
                     max_len: float = 10.0) -> list[Segment]:
     """Split ASR segments at speaker changes, long pauses and (if long) sentence ends."""
@@ -97,6 +141,7 @@ def assign_speakers(segments: list[Segment], turns: list[Turn], max_gap: float =
             continue
 
         labels = _smooth([speaker_at(w.start, w.end, turns) for w in seg.words], seg.words)
+        labels = _snap_to_punctuation(labels, seg.words)
         cur: list[Word] = [seg.words[0]]
         cur_lab = labels[0]
         for word, lab in zip(seg.words[1:], labels[1:]):
@@ -115,7 +160,7 @@ def assign_speakers(segments: list[Segment], turns: list[Turn], max_gap: float =
             cur.append(word)
         emit(cur, cur_lab, seg)
 
-    return relabel_speakers(lines)
+    return relabel_speakers(_merge_fragments(lines))
 
 
 def relabel_speakers(lines: list[Segment]) -> list[Segment]:
@@ -124,6 +169,23 @@ def relabel_speakers(lines: list[Segment]) -> list[Segment]:
     for line in sorted(lines, key=lambda s: s.start):
         mapping.setdefault(line.speaker, f"SPEAKER_{len(mapping) + 1:02d}")
     return [s.model_copy(update={"speaker": mapping[s.speaker]}) for s in lines]
+
+
+def uncovered_speech(speech: list[tuple[float, float]], segments: list[Segment],
+                     min_len: float = 1.0, max_coverage: float = 0.5) -> list[tuple[float, float]]:
+    """VAD speech regions the transcript (mostly) failed to cover.
+
+    Whisper can silently skip part of a 30 s decoding window. Comparing what the VAD
+    heard with what ASR produced finds those holes so they can be re-transcribed.
+    """
+    holes = []
+    for start, end in speech:
+        if end - start < min_len:
+            continue
+        covered = sum(_overlap(start, end, s.start, s.end) for s in segments)
+        if covered / (end - start) < max_coverage:
+            holes.append((start, end))
+    return holes
 
 
 # --- timing budgets ------------------------------------------------------------

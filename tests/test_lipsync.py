@@ -53,12 +53,15 @@ def test_runner_failure_surfaces_its_output():
 
 @pytest.mark.gpu
 def test_wav2lip_end_to_end_on_sample(tmp_path):
-    """Needs scripts/setup_lipsync.ps1 and a talking-head clip at tests/assets/face.mp4."""
+    """Needs scripts/setup_lipsync.ps1 and a talking-head clip (DUBBER_TEST_FACE_VIDEO,
+    default tests/assets/face.mp4), e.g. MuseTalk's data/video/sun.mp4."""
+    import os
     import subprocess
 
     from dubber import media
 
-    face = Path(__file__).parent / "assets" / "face.mp4"
+    face = Path(os.environ.get("DUBBER_TEST_FACE_VIDEO",
+                               Path(__file__).parent / "assets" / "face.mp4"))
     python, repo = lipsync.lipsync_python(), lipsync.lipsync_repo()
     try:
         check_installation(python, repo)
@@ -67,10 +70,11 @@ def test_wav2lip_end_to_end_on_sample(tmp_path):
     if not face.exists():
         pytest.skip("no face sample")
 
-    speech = tmp_path / "speech.wav"
-    media.extract_audio(face, speech, sample_rate=16000, channels=1)
-    out = tmp_path / "out.mp4"
     meta = media.probe(face)
+    speech = tmp_path / "speech.wav"  # smoke test: pipeline integrity, not lip accuracy
+    media.run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=220:sample_rate=16000",
+                     "-t", str(meta.duration_s), speech)
+    out = tmp_path / "out.mp4"
     subprocess.run(build_command(python, repo, face, speech, out, meta.fps, None), check=True)
     result = media.probe(out)
     assert result.resolution == meta.resolution

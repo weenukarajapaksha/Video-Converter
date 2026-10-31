@@ -1,10 +1,12 @@
 import { Maximize2, Minus, Plus, RotateCw } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
   type MouseEvent, type ReactNode, type RefObject } from "react";
-import { fmtTC, fmtTime } from "../api";
+import { LOW_CONFIDENCE, fmtTC, fmtTime } from "../api";
 import { speakerHex, speakerLabel } from "./ui";
 
-export interface ZhBlock { id: number; start: number; end: number; speaker: string; text: string }
+export interface ZhBlock {
+  id: number; start: number; end: number; speaker: string; text: string; confidence: number | null;
+}
 export interface EnBlock {
   id: number; start: number; duration: number; budget: number; speaker: string; text: string;
   tempo: number; rewrites: number; emotion: string; planned: boolean;
@@ -223,17 +225,19 @@ const Tracks = memo(function Tracks({ zh, en, pps, activeZh, activeEn, onSeek, d
       {zh.map((s) => {
         const c = speakerHex(s.speaker);
         const active = s.id === activeZh;
+        const low = s.confidence !== null && s.confidence < LOW_CONFIDENCE;
         return (
           <button key={`zh${s.id}`} onClick={() => onSeek(s.start)}
-            title={`${speakerLabel(s.speaker)} ${fmtTC(s.start)} – ${fmtTC(s.end)}\n${s.text}`}
+            title={`${speakerLabel(s.speaker)} ${fmtTC(s.start)} – ${fmtTC(s.end)}\n${s.text}`
+                   + (s.confidence !== null ? `\nASR confidence ${s.confidence.toFixed(2)}` : "")}
             className="absolute overflow-hidden rounded-md px-1.5 text-left transition-[filter] hover:brightness-125"
             style={{ left: s.start * pps, width: Math.max(4, (s.end - s.start) * pps), top: zhTop + 7,
                      height: ROWS.zh - 14, background: `${c}${active ? "55" : "26"}`,
                      boxShadow: `inset 3px 0 0 ${c}${active ? ", 0 0 0 1.5px " + c : ""}` }}>
             <span className="block truncate pt-1 font-mono text-[0.58rem] font-semibold" style={{ color: c }}>
-              {speakerLabel(s.speaker)}
+              {speakerLabel(s.speaker)}{low && <span className="ml-1 text-warn">?{s.confidence!.toFixed(2)}</span>}
             </span>
-            <span className="block truncate font-zh text-[0.72rem] text-text">{s.text}</span>
+            <span className={`block truncate font-zh text-[0.72rem] text-text ${low ? "low-conf" : ""}`}>{s.text}</span>
           </button>
         );
       })}

@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 import type { JobState } from "../api";
 
 // Speaker palette: mid-saturation hues that read on both the dark and paper themes.
-const SPEAKER_HEX = ["#5aa9ff", "#ff7a9c", "#c58bff", "#ffb547", "#3ddbc4", "#9ad85a"];
+// Eight distinct hues: diarization on real clips can report 5+ speakers.
+const SPEAKER_HEX = ["#5aa9ff", "#ff7a9c", "#c58bff", "#ffb547", "#3ddbc4", "#9ad85a",
+  "#ff8a4c", "#8fa3ff"];
 
 export function speakerHex(speaker: string) {
   const n = parseInt(speaker.replace(/\D/g, ""), 10);

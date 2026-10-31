@@ -1,0 +1,61 @@
+{
+  "duration_s": 33.364,
+  "lines": [
+    {
+      "start": 1.5,
+      "end": 5.388,
+      "text": "快点快点，车马上就要开了，你东西都收拾好了没有？",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 5.688,
+      "end": 9.648,
+      "text": "马上就好，我在找我的充电器，刚才明明放在桌子上的。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 9.948,
+      "end": 13.5,
+      "text": "别找了，路上再买一个，再不走我们就赶不上了！",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 13.8,
+      "end": 16.992,
+      "text": "好好好，我拿上包就走，你先去楼下叫车吧。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 17.292,
+      "end": 20.58,
+      "text": "车已经叫好了，司机说三分钟以后就到门口。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 20.88,
+      "end": 24.336,
+      "text": "那你帮我拿一下这个箱子，太重了我一个人搬不动。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 24.636,
+      "end": 27.708,
+      "text": "给我吧，你把门锁好，钥匙别忘了带。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 28.008,
+      "end": 30.864,
+      "text": "放心吧，钥匙在我口袋里，走吧走吧。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    }
+  ]
+}

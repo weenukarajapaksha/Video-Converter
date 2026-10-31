@@ -49,6 +49,16 @@ def test_critic_fixes_that_break_the_time_budget_are_discarded(monkeypatch):
     assert out.issues[0].revised_text == "I'll fix this."
 
 
+def test_circuit_breaker_moves_a_failing_model_to_the_back(monkeypatch):
+    monkeypatch.setattr(llm, "_cooldown", {})
+    monkeypatch.setattr(llm, "FALLBACK_MODELS", ["fallback-a", "fallback-b"])
+    llm._trip("primary")
+    assert llm.candidate_models("primary") == ["fallback-a", "fallback-b", "primary"]
+    # After the cooldown expires the primary model is preferred again.
+    later = llm.time.monotonic() + llm.COOLDOWN_S + 1
+    assert llm.candidate_models("primary", now=later)[0] == "primary"
+
+
 def test_usage_cost_uses_the_model_that_actually_answered():
     usage = llm.Usage(input_tokens=1_000_000, output_tokens=0, model="gemini-2.5-flash")
     assert usage.cost("gemini-3.8-flash") == pytest.approx(0.30)

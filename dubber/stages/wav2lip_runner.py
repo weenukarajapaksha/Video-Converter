@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pickle
 import subprocess
 import sys
 import time
@@ -118,7 +119,7 @@ def detect_faces(args, device, active, n_frames) -> dict[int, tuple[int, int, in
         i += 1
     flush()
     cap.release()
-    del detector
+    detector = None  # release VRAM before the generator loads
     if device == "cuda":
         torch.cuda.empty_cache()
     return smooth_boxes(fill_gaps(boxes, wanted, args.det_stride))
@@ -149,7 +150,7 @@ def load_model(args, device):
 
     try:
         ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
-    except Exception:  # older checkpoints pickle optimizer state; source is pinned in setup
+    except pickle.UnpicklingError:  # older checkpoints pickle optimizer state; source is pinned in setup
         ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
     state = {k.replace("module.", ""): v for k, v in ckpt["state_dict"].items()}
     model = Wav2Lip()

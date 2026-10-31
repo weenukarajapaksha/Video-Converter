@@ -18,6 +18,37 @@ log = logging.getLogger(__name__)
 
 DIARIZATION = "diarization.json"
 PIPELINE_ID = "pyannote/speaker-diarization-3.1"
+# Gated repos the pipeline pulls in; each needs its terms accepted on huggingface.co.
+GATED_MODELS = {"pyannote/speaker-diarization-3.1": "config.yaml",
+                "pyannote/segmentation-3.0": "config.yaml"}
+
+
+def _allow_pyannote_checkpoints() -> None:
+    """PyTorch >= 2.6 loads checkpoints with ``weights_only=True``, which rejects any
+    class not explicitly allow-listed. pyannote 3.x checkpoints pickle a few of their
+    own metadata classes; allow exactly those instead of disabling the safety check."""
+    import torch
+    from pyannote.audio.core.task import Problem, Resolution, Specifications
+
+    torch.serialization.add_safe_globals(
+        [torch.torch_version.TorchVersion, Specifications, Problem, Resolution])
+
+
+def check_model_access(token: str) -> None:
+    """Fail fast with an actionable message: pyannote itself swallows 403s and
+    later crashes with "'NoneType' object has no attribute 'eval'"."""
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+    for repo, filename in GATED_MODELS.items():
+        try:
+            hf_hub_download(repo, filename, token=token)
+        except GatedRepoError:
+            raise DubberError(f"HF_TOKEN's account has not accepted the terms of {repo}: "
+                              f"open https://huggingface.co/{repo}, click 'Agree', then "
+                              "retry") from None
+        except RepositoryNotFoundError:
+            raise DubberError(f"HF_TOKEN is invalid or cannot see {repo}") from None
 
 
 def _hf_hub_compat() -> None:
@@ -60,7 +91,9 @@ class DiarizeStage(Stage):
         token = get_settings().hf_token
         if not token:
             raise DubberError("HF_TOKEN is not set - required for pyannote diarization")
-        _hf_hub_compat()
+        check_model_access(token)
+        _hf_hub_compat()  # must precede the first pyannote import
+        _allow_pyannote_checkpoints()
         import torch
         from pyannote.audio import Pipeline as PyannotePipeline
 

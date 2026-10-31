@@ -1,0 +1,33 @@
+{
+  "duration_s": 39.624,
+  "lines": [
+    {
+      "start": 1.5,
+      "end": 4.284,
+      "text": "这里就是我小时候住过的地方。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 11.284,
+      "end": 14.38,
+      "text": "变化真大，我几乎认不出来了。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    },
+    {
+      "start": 20.88,
+      "end": 25.056,
+      "text": "那棵老树还在，我们以前经常在下面乘凉。",
+      "speaker": "zh-CN-YunxiNeural",
+      "gender": "male"
+    },
+    {
+      "start": 32.556,
+      "end": 35.124,
+      "text": "以后我们常回来看看吧。",
+      "speaker": "zh-CN-XiaoxiaoNeural",
+      "gender": "female"
+    }
+  ]
+}
