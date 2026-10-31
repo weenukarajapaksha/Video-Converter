@@ -12,6 +12,10 @@ jobs/
 models/
 *.wav
 
+# lip sync: cloned Wav2Lip repo + checkpoints, isolated env
+third_party/
+.venv-lipsync/
+
 # frontend
 web/node_modules/
 web/dist/

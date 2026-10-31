@@ -99,6 +99,18 @@ def validate(meta: VideoMetadata, min_s: float, max_s: float) -> None:
         )
 
 
+def time_stretch(src: Path, dst: Path, tempo: float, sample_rate: int) -> Path:
+    """Change speed without changing pitch (Rubber Band, formant-preserving).
+
+    ``tempo`` > 1 speeds up. Output is resampled to ``sample_rate`` mono PCM.
+    """
+    filters = [] if abs(tempo - 1.0) < 1e-3 else [
+        f"rubberband=tempo={tempo:.4f}:pitchq=quality:formant=preserved"]
+    filters.append(f"aresample={sample_rate}")
+    run_ffmpeg("-i", src, "-af", ",".join(filters), "-ac", "1", "-c:a", "pcm_s16le", dst)
+    return dst
+
+
 def extract_audio(src: Path, dst: Path, sample_rate: int | None = None,
                   channels: int | None = None) -> Path:
     """Decode the first audio stream to 16-bit PCM WAV (lossless intermediate)."""
