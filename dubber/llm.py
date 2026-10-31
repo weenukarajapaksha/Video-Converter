@@ -29,7 +29,9 @@ _RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
 # Tried in order when the requested model is overloaded (503) or rate-limited (429).
 FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-flash-latest"]
 COOLDOWN_S = 120.0
-REQUEST_TIMEOUT_MS = 120_000
+# A healthy full-script translation takes ~8-40 s; an overloaded model can hang
+# without erroring, so fail over after 60 s (the circuit breaker then skips it).
+REQUEST_TIMEOUT_MS = 60_000
 
 class QuotaExhausted(DubberError):
     """Daily quota used up: try another model, but never retry the same one."""

@@ -27,6 +27,39 @@ def classify_gender(median_f0: float | None) -> Gender:
     return "male" if median_f0 < GENDER_SPLIT_HZ else "female"
 
 
+# Below/above these, pitch alone is conclusive; in between (light male voices,
+# low female voices) the decision is made relative to the other speakers.
+CLEARLY_MALE_HZ = 150.0
+CLEARLY_FEMALE_HZ = 215.0
+GENDER_GAP_RATIO = 1.3  # ~4.5 semitones: typical male/female gap within one scene
+
+
+def classify_genders(f0s: dict[str, float | None]) -> dict[str, Gender]:
+    """Gender per speaker, using the other speakers as context for ambiguous pitch.
+
+    A fixed 160 Hz split labelled a light male voice (180-206 Hz) female in the
+    evaluation scenarios. Within one video, a speaker in the ambiguous band who is a
+    clear interval below another speaker is taken as male, and one clearly above
+    another as female; otherwise the fixed split decides.
+    """
+    known = {s: f for s, f in f0s.items() if f is not None and np.isfinite(f)}
+    out: dict[str, Gender] = {}
+    for speaker, f0 in f0s.items():
+        if speaker not in known:
+            out[speaker] = "unknown"
+        elif f0 < CLEARLY_MALE_HZ:
+            out[speaker] = "male"
+        elif f0 > CLEARLY_FEMALE_HZ:
+            out[speaker] = "female"
+        elif any(other >= f0 * GENDER_GAP_RATIO for s, other in known.items() if s != speaker):
+            out[speaker] = "male"
+        elif any(other * GENDER_GAP_RATIO <= f0 for s, other in known.items() if s != speaker):
+            out[speaker] = "female"
+        else:
+            out[speaker] = classify_gender(f0)
+    return out
+
+
 def median_f0(audio: np.ndarray, spans: list[tuple[float, float]]) -> float | None:
     import librosa
 
@@ -90,14 +123,16 @@ class VoicesStage(Stage):
         transcript = job.read_model(TRANSCRIPT, Transcript)
         audio = load_mono_16k(job.path(VOCALS))
 
-        stats: list[tuple[str, Gender, float]] = []
         f0s: dict[str, float | None] = {}
+        talk: dict[str, float] = {}
         for i, speaker in enumerate(transcript.speakers):
             spans = [(s.start, s.end) for s in transcript.segments if s.speaker == speaker]
             f0s[speaker] = median_f0(audio, spans)
-            stats.append((speaker, classify_gender(f0s[speaker]),
-                          sum(e - s for s, e in spans)))
+            talk[speaker] = sum(e - s for s, e in spans)
             progress((i + 1) / max(1, len(transcript.speakers)), f"analysed {speaker}")
+        genders = classify_genders(f0s)
+        stats: list[tuple[str, Gender, float]] = [
+            (spk, genders[spk], talk[spk]) for spk in transcript.speakers]
 
         language = job.option("target_language", get_settings().target_language)
         voices = pick_voices(stats, provider, f0s, language)

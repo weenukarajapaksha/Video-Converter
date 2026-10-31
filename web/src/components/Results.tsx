@@ -1,6 +1,6 @@
-import { Download, FileAudio, FileJson, FileText, FileVideo, Receipt } from "lucide-react";
+import { Download, FileAudio, FileJson, FileText, FileVideo, Timer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { STAGES, api, fmtBytes, fmtDuration, fmtUsd, type JobSummary, type Report } from "../api";
+import { STAGES, api, fmtBytes, fmtDuration, type JobSummary, type Report } from "../api";
 import { Panel, Stat } from "./ui";
 
 const TAPES: { name: string; label: string; kind: "video" | "audio" | "text" | "json" }[] = [
@@ -66,16 +66,13 @@ export function ReportCard({ job }: { job: JobSummary }) {
   const rtf = report.realtime_factor;
 
   return (
-    <Panel eyebrow="Production report" title="Cost & time" icon={<Receipt className="size-4" />}>
+    <Panel eyebrow="Production report" title="Processing time" icon={<Timer className="size-4" />}>
       <div className="mb-5 grid grid-cols-2 gap-2.5">
         <Stat label="Processing" value={fmtDuration(report.total_duration_s)}
           sub={report.video_duration_s ? `for ${fmtDuration(report.video_duration_s)} of video` : undefined} />
         <Stat label="Realtime factor" value={rtf != null ? `${rtf.toFixed(2)}×` : "—"}
           sub={rtf != null ? (rtf <= 1 ? "faster than realtime" : "slower than realtime") : undefined}
           accent={rtf != null && rtf <= 1 ? "var(--ok)" : undefined} />
-        <Stat label="API cost" value={fmtUsd(report.total_cost_usd)} accent="var(--signal)"
-          sub="paid-tier list prices" />
-        <Stat label="Per minute" value={fmtUsd(report.cost_per_minute_usd)} sub="of source video" />
       </div>
 
       <div className="eyebrow mb-2">Stage timing</div>
@@ -91,28 +88,11 @@ export function ReportCard({ job }: { job: JobSummary }) {
                     : "linear-gradient(90deg, color-mix(in srgb, var(--signal) 55%, transparent), var(--signal))" }} />
                 {s.attempts > 1 && <span className="absolute right-1 top-0 font-mono text-[0.6rem] leading-4 text-warn">×{s.attempts}</span>}
               </span>
-              <span className="tc text-right">
-                {fmtDuration(s.duration_s)}
-                {s.cost_usd > 0 && <span className="block text-[0.6rem] text-signal">{fmtUsd(s.cost_usd)}</span>}
-              </span>
+              <span className="tc text-right">{fmtDuration(s.duration_s)}</span>
             </li>
           );
         })}
       </ul>
-
-      {report.costs.length > 0 && (
-        <details className="mt-4 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs">
-          <summary className="cursor-pointer font-medium">API usage ledger</summary>
-          <ul className="mt-2 space-y-1">
-            {report.costs.map((c, i) => (
-              <li key={i} className="tc flex justify-between gap-4 text-muted">
-                <span className="truncate">{c.provider} · {c.item} · {c.quantity.toLocaleString()} {c.unit}</span>
-                <span className="text-text">{fmtUsd(c.usd)}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </Panel>
   );
 }

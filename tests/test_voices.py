@@ -30,3 +30,16 @@ def test_gender_split_and_catalog_pitch_lookup():
     assert classify_gender(None) == "unknown"
     assert voice_f0("edge", "en-US-AvaNeural") == 197.0
     assert voice_f0("edge", "nope") is None
+
+
+def test_light_male_voice_is_judged_relative_to_the_other_speaker():
+    # Evaluation finding: the male test voice measured 179-206 Hz and a fixed 160 Hz
+    # split called him female. Next to a 260 Hz woman he is clearly the lower voice.
+    from dubber.stages.voices import classify_genders
+
+    assert classify_genders({"m": 190.0, "f": 260.0}) == {"m": "male", "f": "female"}
+    # Clear cases ignore context; unknown pitch stays unknown.
+    assert classify_genders({"a": 110.0, "b": 125.0}) == {"a": "male", "b": "male"}
+    assert classify_genders({"a": 230.0, "b": None}) == {"a": "female", "b": "unknown"}
+    # A lone ambiguous speaker falls back to the fixed split.
+    assert classify_genders({"solo": 190.0}) == {"solo": "female"}

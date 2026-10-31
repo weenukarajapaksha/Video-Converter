@@ -1,6 +1,6 @@
 import { Clapperboard, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, fmtDuration, fmtTC, fmtUsd, type JobSummary } from "../api";
+import { api, fmtDuration, fmtTC, type JobSummary } from "../api";
 import { ErrorNote, StatusPill } from "../components/ui";
 
 export default function JobsPage() {
@@ -60,9 +60,7 @@ export default function JobsPage() {
                     <p className="truncate font-display font-bold">{j.input_name.replace(/\.mp4$/i, "")}</p>
                     <div className="flex flex-wrap justify-between gap-2 font-mono text-[0.7rem] text-muted">
                       <span>{new Date(j.created_at).toLocaleString()}</span>
-                      <span>
-                        {j.total_duration_s > 0 && `${fmtDuration(j.total_duration_s)} · `}{fmtUsd(j.total_cost_usd)}
-                      </span>
+                      {j.total_duration_s > 0 && <span>{fmtDuration(j.total_duration_s)}</span>}
                     </div>
                     {running && <p className="truncate font-mono text-[0.7rem] text-signal">▸ {j.stage} {j.message}</p>}
                   </div>

@@ -394,9 +394,10 @@ OBSERVATIONS = """\
 * **Transcription is near-perfect even under music and noise.** CER is 0–2.7 % on every
   scenario, including 0 % on `noisy` (white noise at −20 dB SNR *plus* music): ASR runs
   on the Demucs vocal stem, not the mix. Errors that remain are single homophones in
-  fast/long speech. Coverage is 96–99 %; the missing 1–4 % is word-timestamp edge
+  fast/long speech. Coverage is 94–99 %; the missing 1–6 % is word-timestamp edge
   trimming, not dropped dialogue (every truth line is voiced, see `truth_lines_voiced`).
-* **Speaker count is right in every scenario** (2/2), including with music and noise.
+* **Speaker count is right in every scenario** (1/1 and 2/2), including with music
+  and noise.
 * **Silent sections stay silent.** No dub line starts inside a protected silence, and the
   generated dialogue track measures digital silence (−∞ dBFS) there.
 * **Timing.** Dub lines start on average 0.17–0.39 s from the true line start. At most
@@ -420,17 +421,18 @@ OBSERVATIONS = """\
    previous speaker's label. Fix: snap each line start forward to the first diarization
    turn / VAD speech onset it overlaps.
 3. **Gemini free-tier limits dominate latency and reliability.** Model stages take
-   ~1–1.5 min per minute of video, but one translation took 262 s while every fallback
-   model was overloaded (503), and two scenarios first failed outright with HTTP 429
-   ("retry in 25 min") once the free daily quota ran out — the fallback models share
-   that quota. They were re-run after the quota reset. With a paid key this disappears.
-4. **The critic is skipped under overload** (`fast_dialogue` has no scores): by design
-   the draft translation is kept rather than failing the job.
+   ~1–1.5 min per minute of video, but translation took 78–262 s in three runs while
+   the Gemini models were overloaded (503), and two scenarios (`one_speaker_clear`,
+   `silent_sections`) first failed outright with HTTP 429 ("retry in 25 min") once the
+   free quota ran out — the fallback models share that quota. Both passed when re-run
+   after the reset. With a paid key this disappears.
+4. **The critic is skipped under overload** (`fast_dialogue` and `one_speaker_clear`
+   have no scores): by design the draft translation is kept rather than failing the job.
 
 **Latency profile (RTX 3050 4 GB, models cached).** Separation (4-model `htdemucs_ft`)
 19–46 s and Whisper large-v3 16–36 s are the largest local costs; diarization 11–21 s;
 TTS + time-fitting 3–10 s with free Edge voices; mix + render < 10 s with the video
-stream copied, not re-encoded. Without API outages the realtime factor is ~2–3.3×."""
+stream copied, not re-encoded. Without API outages the realtime factor is ~2–3.4×."""
 
 
 def main() -> None:

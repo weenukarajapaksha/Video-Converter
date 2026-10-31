@@ -36,8 +36,8 @@ scenarios. Every number below is produced by `python scripts/evaluate.py all`.
 | fast_dialogue | 33s | 2.7% | 97% | 2/2 | 50% | 0 | 0.179s | 22.2% / ×1.0887 | 0 | —/—/— | 322.0s (9.65×) | $0.0018 |
 | long_sentences | 48s | 2.6% | 99% | 2/2 | 100% | 0 | 0.171s | 11.1% / ×1.25 | 1 | 10/9/10 | 97.9s (2.04×) | $0.0093 |
 | noisy | 32s | 0.0% | 96% | 2/2 | 50% | 0 | 0.205s | 0.0% / ×1.0 | 0 | 9/9/10 | 107.5s (3.33×) | $0.0044 |
-| one_speaker_clear | FAILED: Please retry in 25m13.349829034s. | — | — | — | — | — | — | — | — | — | — | — |
-| silent_sections | FAILED: Please retry in 22m52.515049762s. | — | — | — | — | — | — | — | — | — | — | — |
+| one_speaker_clear | 37s | 0.9% | 96% | 1/1 | 100% | 0 | 0.189s | 0.0% / ×1.0 | 0 | —/—/— | 246.2s (6.62×) | $0.001 |
+| silent_sections | 40s | 1.9% | 94% | 2/2 | 50% | 0 | 0.165s | 0.0% / ×1.0 | 0 | 9/8/9 | 133.0s (3.36×) | $0.0076 |
 
 ### Per-stage latency (seconds)
 
@@ -47,6 +47,8 @@ scenarios. Every number below is produced by `python scripts/evaluate.py all`.
 | fast_dialogue | 0.199 | 19.467 | 15.786 | 10.603 | 1.265 | 262.056 | 9.278 | 2.397 | 0.959 |
 | long_sentences | 0.178 | 23.018 | 17.098 | 21.146 | 1.733 | 21.029 | 8.346 | 3.651 | 1.695 |
 | noisy | 0.192 | 45.678 | 22.551 | 16.452 | 1.446 | 14.989 | 2.51 | 2.617 | 1.105 |
+| one_speaker_clear | 0.148 | 19.017 | 15.114 | 10.972 | 0.732 | 192.654 | 3.106 | 2.782 | 1.703 |
+| silent_sections | 0.177 | 20.701 | 13.753 | 11.41 | 0.321 | 78.401 | 4.187 | 2.619 | 1.427 |
 
 Job ids, per-line CER and every raw metric: [`evaluation.json`](evaluation.json).
 
@@ -67,9 +69,10 @@ Job ids, per-line CER and every raw metric: [`evaluation.json`](evaluation.json)
 * **Transcription is near-perfect even under music and noise.** CER is 0–2.7 % on every
   scenario, including 0 % on `noisy` (white noise at −20 dB SNR *plus* music): ASR runs
   on the Demucs vocal stem, not the mix. Errors that remain are single homophones in
-  fast/long speech. Coverage is 96–99 %; the missing 1–4 % is word-timestamp edge
+  fast/long speech. Coverage is 94–99 %; the missing 1–6 % is word-timestamp edge
   trimming, not dropped dialogue (every truth line is voiced, see `truth_lines_voiced`).
-* **Speaker count is right in every scenario** (2/2), including with music and noise.
+* **Speaker count is right in every scenario** (1/1 and 2/2), including with music
+  and noise.
 * **Silent sections stay silent.** No dub line starts inside a protected silence, and the
   generated dialogue track measures digital silence (−∞ dBFS) there.
 * **Timing.** Dub lines start on average 0.17–0.39 s from the true line start. At most
@@ -93,14 +96,30 @@ Job ids, per-line CER and every raw metric: [`evaluation.json`](evaluation.json)
    previous speaker's label. Fix: snap each line start forward to the first diarization
    turn / VAD speech onset it overlaps.
 3. **Gemini free-tier limits dominate latency and reliability.** Model stages take
-   ~1–1.5 min per minute of video, but one translation took 262 s while every fallback
-   model was overloaded (503), and two scenarios first failed outright with HTTP 429
-   ("retry in 25 min") once the free daily quota ran out — the fallback models share
-   that quota. They were re-run after the quota reset. With a paid key this disappears.
-4. **The critic is skipped under overload** (`fast_dialogue` has no scores): by design
-   the draft translation is kept rather than failing the job.
+   ~1–1.5 min per minute of video, but translation took 78–262 s in three runs while
+   the Gemini models were overloaded (503), and two scenarios (`one_speaker_clear`,
+   `silent_sections`) first failed outright with HTTP 429 ("retry in 25 min") once the
+   free quota ran out — the fallback models share that quota. Both passed when re-run
+   after the reset. With a paid key this disappears.
+4. **The critic is skipped under overload** (`fast_dialogue` and `one_speaker_clear`
+   have no scores): by design the draft translation is kept rather than failing the job.
 
 **Latency profile (RTX 3050 4 GB, models cached).** Separation (4-model `htdemucs_ft`)
 19–46 s and Whisper large-v3 16–36 s are the largest local costs; diarization 11–21 s;
 TTS + time-fitting 3–10 s with free Edge voices; mix + render < 10 s with the video
-stream copied, not re-encoded. Without API outages the realtime factor is ~2–3.3×.
+stream copied, not re-encoded. Without API outages the realtime factor is ~2–3.4×.
+
+## Fixes driven by this evaluation
+
+The harness exposed two pipeline bugs; both were fixed and the affected scenario re-scored
+(`two_speakers_music`, job `20261031-062122-a0b546`, re-run from diarization):
+
+| Metric | Before | After | Fix |
+|---|---|---|---|
+| Gender accuracy | 50% | **100%** | `classify_genders` judges ambiguous pitch (150-215 Hz) relative to the other speakers instead of a fixed 160 Hz split; a light male voice (179-206 Hz) was being labelled female |
+| Mean line-start offset | 0.39 s | **0.16 s** | `snap_starts_to_speech`: a line's start snaps forward to its speaker's first diarization turn; Whisper's first-word timestamp had reached back up to 1.8 s into the preceding silence |
+| Max line-start offset | 1.8 s | **0.38 s** | (same) |
+| Truth lines voiced / silence leaks | 9/9, 0 | 9/9, 0 | unchanged |
+
+Both fixes are covered by unit tests built from the measured cases (`tests/test_align.py`,
+`tests/test_voices.py`).

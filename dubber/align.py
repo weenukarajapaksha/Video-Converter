@@ -160,7 +160,42 @@ def assign_speakers(segments: list[Segment], turns: list[Turn], max_gap: float =
             cur.append(word)
         emit(cur, cur_lab, seg)
 
-    return relabel_speakers(merge_short_lines(_merge_fragments(lines)))
+    lines = merge_short_lines(_merge_fragments(lines))
+    return relabel_speakers(snap_starts_to_speech(lines, turns))
+
+
+def snap_starts_to_speech(lines: list[Segment], turns: list[Turn],
+                          min_shift: float = 0.25) -> list[Segment]:
+    """Move each line's start forward to where its speaker actually starts talking.
+
+    Whisper's first-word timestamp sometimes reaches back into the preceding silence
+    (measured: up to 1.8 s), which would make the dub start before the actor speaks.
+    The line's speaker is re-derived from diarization overlap (a wrong first-word
+    timestamp can also inherit the previous speaker), then the start snaps to that
+    speaker's first turn inside the line.
+    """
+    if not turns:
+        return lines
+    out = []
+    for line in lines:
+        overlap: dict[str, float] = {}
+        for t in turns:
+            ov = _overlap(line.start, line.end, t.start, t.end)
+            if ov > 0:
+                overlap[t.speaker] = overlap.get(t.speaker, 0.0) + ov
+        if not overlap:
+            out.append(line)
+            continue
+        speaker = max(overlap, key=overlap.get)
+        onset = min(t.start for t in turns
+                    if t.speaker == speaker and _overlap(line.start, line.end, t.start, t.end) > 0)
+        update: dict = {}
+        if onset - line.start >= min_shift and line.end - onset >= 0.3:
+            update["start"] = round(onset, 3)
+            if speaker != line.speaker:
+                update["speaker"] = speaker
+        out.append(line.model_copy(update=update) if update else line)
+    return out
 
 
 def _is_short(line: Segment, min_dur: float) -> bool:

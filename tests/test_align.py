@@ -149,3 +149,18 @@ def test_word_budget_scales_with_time():
     assert word_budget(1.0) == 2
     assert word_budget(4.0) == 10
     assert word_budget(0.1) == 1
+
+
+def test_line_start_snaps_forward_to_real_speech_onset_and_speaker():
+    # Real case (two_speakers_music): Whisper placed "对不起，是我的错。" at 42.54 s, but
+    # the speaker (B) only starts at 44.11 s; the line had inherited speaker A.
+    from dubber.align import snap_starts_to_speech
+
+    line = Segment(id=0, start=42.54, end=45.63, speaker="A", text="对不起，是我的错。")
+    turns = [Turn(38.4, 42.5, "A"), Turn(44.11, 45.7, "B")]
+    [snapped] = snap_starts_to_speech([line], turns)
+    assert (snapped.start, snapped.speaker) == (44.11, "B")
+
+    # A line that already starts on time is untouched.
+    ok = Segment(id=1, start=1.5, end=2.9, speaker="A", text="你今天为什么来这里？")
+    assert snap_starts_to_speech([ok], [Turn(1.45, 3.0, "A")]) == [ok]
