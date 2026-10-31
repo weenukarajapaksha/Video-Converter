@@ -145,9 +145,9 @@ def time_budgets(segments: list[Segment], total_duration: float, min_pause: floa
     budgets = [0.0] * len(segments)
     for rank, i in enumerate(ordered):
         seg = segments[i]
-        next_start = (segments[ordered[rank + 1]].start if rank + 1 < len(ordered)
+        next_start = (segments[ordered[rank + 1]].start - min_pause if rank + 1 < len(ordered)
                       else total_duration)
-        limit = min(next_start - min_pause, seg.end + max_extend, total_duration)
+        limit = min(next_start, seg.end + max_extend, total_duration)
         budgets[i] = round(max(seg.duration, limit - seg.start), 3)
     return budgets
 
