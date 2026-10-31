@@ -64,5 +64,13 @@ def resume(
     _execute(Job(get_settings().jobs_dir / job_id), force)
 
 
+@app.command()
+def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
+    """Start the web UI + REST API."""
+    import uvicorn
+
+    uvicorn.run("dubber.api.app:app", host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     app()
